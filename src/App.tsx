@@ -7,6 +7,7 @@ import { AlarmTriggeredScreen } from './components/AlarmTriggeredScreen';
 import { SettingsView } from './components/SettingsView';
 import { NavigationBar } from './components/NavigationBar';
 import { getDistanceInMeters, getDefaultStartingLocation } from './utils/geo';
+import { stopAlarmSound } from './utils/audio';
 import { initAuth, signInWithGoogle, signOutUser } from './lib/firebase';
 import {
   subscribeToUserAlarms,
@@ -14,13 +15,24 @@ import {
   toggleAlarmInFirestore,
   deleteAlarmFromFirestore,
   logUserLocationToFirestore,
+  getLocalAlarms,
+  saveLocalAlarms,
 } from './services/alarmService';
 import { User } from 'firebase/auth';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [alarms, setAlarms] = useState<Alarm[]>(() => getLocalAlarms());
   const [isLoadingAlarms, setIsLoadingAlarms] = useState(true);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'info' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => {
+      setToastMessage((prev) => (prev?.text === text ? null : prev));
+    }, 3200);
+  };
 
   // User location (default: detected locale/India coordinate or GPS)
   const [userLocation, setUserLocation] = useState<UserLocation>(() => {
@@ -51,7 +63,6 @@ export default function App() {
   // Real-time Firestore Alarms Subscription for Current User
   useEffect(() => {
     if (!currentUser?.uid) {
-      setAlarms([]);
       setIsLoadingAlarms(false);
       return;
     }
@@ -60,11 +71,24 @@ export default function App() {
     const unsubscribe = subscribeToUserAlarms(
       currentUser.uid,
       (fetchedAlarms) => {
-        setAlarms(fetchedAlarms);
+        setAlarms((prev) => {
+          if (fetchedAlarms && fetchedAlarms.length > 0) {
+            saveLocalAlarms(fetchedAlarms);
+            return fetchedAlarms;
+          }
+          // If Firestore is empty but user had locally created alarms, sync them up
+          if (prev.length > 0) {
+            prev.forEach((item) => {
+              saveAlarmToFirestore({ ...item, userId: currentUser.uid });
+            });
+            return prev;
+          }
+          return prev;
+        });
         setIsLoadingAlarms(false);
       },
       (error) => {
-        console.error('Firestore subscription error:', error);
+        console.warn('Firestore subscription warning:', error.message);
         setIsLoadingAlarms(false);
       }
     );
@@ -234,19 +258,21 @@ export default function App() {
     }
   }, [userLocation, alarms, triggeredAlarm]);
 
-  // Alarm Management Handlers (Persisted to Firestore)
+  // Alarm Management Handlers (Persisted to Firestore & Local Cache)
   const handleToggleAlarm = async (id: string) => {
     const alarm = alarms.find((a) => a.id === id);
     if (!alarm) return;
     const newStatus = !alarm.enabled;
-    // Optimistic UI update
-    setAlarms((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, enabled: newStatus } : a))
-    );
+    // Optimistic UI & local cache update
+    setAlarms((prev) => {
+      const updated = prev.map((a) => (a.id === id ? { ...a, enabled: newStatus } : a));
+      saveLocalAlarms(updated);
+      return updated;
+    });
     try {
       await toggleAlarmInFirestore(id, newStatus);
     } catch (err) {
-      console.error('Failed to toggle alarm in Firestore:', err);
+      console.warn('Failed to toggle alarm in Firestore:', err);
     }
   };
 
@@ -265,51 +291,114 @@ export default function App() {
   const handleSaveAlarm = async (
     alarmData: Omit<Alarm, 'id' | 'createdAt' | 'userId'> & { id?: string; createdAt?: number }
   ) => {
-    try {
-      await saveAlarmToFirestore({
-        ...alarmData,
-        userId: currentUser?.uid || '',
-      });
-    } catch (err) {
-      console.error('Failed to save alarm to Firestore:', err);
-    }
+    const finalId = alarmData.id || `alarm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newOrUpdatedAlarm: Alarm = {
+      id: finalId,
+      userId: currentUser?.uid || 'guest_user',
+      name: alarmData.name,
+      lat: alarmData.lat,
+      lng: alarmData.lng,
+      radius: alarmData.radius,
+      enabled: alarmData.enabled,
+      sound: alarmData.sound,
+      vibration: alarmData.vibration,
+      alarmTone: alarmData.alarmTone,
+      createdAt: alarmData.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    // Instant optimistic UI & local storage persistence
+    setAlarms((prev) => {
+      const exists = prev.some((a) => a.id === finalId);
+      const updated = exists
+        ? prev.map((a) => (a.id === finalId ? newOrUpdatedAlarm : a))
+        : [newOrUpdatedAlarm, ...prev];
+      saveLocalAlarms(updated);
+      return updated;
+    });
+
+    const isUpdate = Boolean(editingAlarm);
+    showToast(
+      isUpdate
+        ? `Updated "${newOrUpdatedAlarm.name}"`
+        : `Created alarm for "${newOrUpdatedAlarm.name}" (${newOrUpdatedAlarm.radius}m)`,
+      'success'
+    );
+
     setIsConfiguring(false);
     setEditingAlarm(null);
     setNewAlarmPreset(null);
+
+    // Sync to Firestore in background
+    try {
+      await saveAlarmToFirestore(newOrUpdatedAlarm);
+    } catch (err) {
+      console.warn('Background sync to Firestore:', err);
+    }
   };
 
   const handleDeleteAlarm = async (id: string) => {
-    setAlarms((prev) => prev.filter((a) => a.id !== id));
+    const deletedItem = alarms.find((a) => a.id === id);
+    setAlarms((prev) => {
+      const updated = prev.filter((a) => a.id !== id);
+      saveLocalAlarms(updated);
+      return updated;
+    });
+    showToast(`Deleted "${deletedItem?.name || 'Alarm'}"`, 'info');
+    setIsConfiguring(false);
+    setEditingAlarm(null);
     try {
       await deleteAlarmFromFirestore(id);
     } catch (err) {
-      console.error('Failed to delete alarm from Firestore:', err);
+      console.warn('Failed to delete alarm from Firestore:', err);
     }
-    setIsConfiguring(false);
-    setEditingAlarm(null);
   };
 
   const handleDismissTriggeredAlarm = () => {
-    if (triggeredAlarm) {
-      setAlarms((prev) =>
-        prev.map((a) =>
-          a.id === triggeredAlarm.id
-            ? { ...a, lastTriggeredAt: Date.now(), snoozedUntil: null }
+    stopAlarmSound();
+    const currentTriggered = triggeredAlarm;
+    if (currentTriggered) {
+      const updatedAlarmId = currentTriggered.id;
+      setAlarms((prev) => {
+        const updated = prev.map((a) =>
+          a.id === updatedAlarmId
+            ? { ...a, enabled: false, lastTriggeredAt: Date.now(), snoozedUntil: null }
             : a
-        )
-      );
+        );
+        saveLocalAlarms(updated);
+        return updated;
+      });
+
+      // Stop simulator if it was active
+      if (isSimulatedMovement) {
+        setIsSimulatedMovement(false);
+      }
+
+      showToast(`Destination reached! Alarm dismissed for "${currentTriggered.name}".`, 'success');
+
+      // Persist disabled state in Firestore
+      if (updatedAlarmId && !updatedAlarmId.startsWith('test-')) {
+        toggleAlarmInFirestore(updatedAlarmId, false).catch((err) =>
+          console.warn('Failed to update dismissed alarm in Firestore:', err)
+        );
+      }
     }
     setTriggeredAlarm(null);
   };
 
   const handleSnoozeTriggeredAlarm = (minutes = 5) => {
-    if (triggeredAlarm) {
+    stopAlarmSound();
+    const currentTriggered = triggeredAlarm;
+    if (currentTriggered) {
       const snoozeUntil = Date.now() + minutes * 60 * 1000;
-      setAlarms((prev) =>
-        prev.map((a) =>
-          a.id === triggeredAlarm.id ? { ...a, snoozedUntil: snoozeUntil } : a
-        )
-      );
+      setAlarms((prev) => {
+        const updated = prev.map((a) =>
+          a.id === currentTriggered.id ? { ...a, snoozedUntil: snoozeUntil } : a
+        );
+        saveLocalAlarms(updated);
+        return updated;
+      });
+      showToast(`Alarm snoozed for ${minutes} mins`, 'info');
     }
     setTriggeredAlarm(null);
   };
@@ -354,6 +443,22 @@ export default function App() {
           <div className="w-2.5 h-2.5 rounded-full bg-[#1b0a13] mr-2" />
           <div className="w-10 h-1 bg-[#2b0f1e] rounded-full" />
         </div>
+
+        {/* Floating Notification Toast */}
+        {toastMessage && (
+          <div className="absolute top-12 left-4 right-4 z-[9999] pointer-events-none flex justify-center animate-in fade-in slide-in-from-top-3 duration-200">
+            <div className="bg-[#240d1a]/95 backdrop-blur-md border border-[#ffa8bf]/50 text-white px-4 py-2.5 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.8)] flex items-center gap-2.5 max-w-sm">
+              {toastMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-[#ffa8bf] shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-[#e57373] shrink-0" />
+              )}
+              <span className="font-spacemono text-xs text-[#fce4ec] truncate font-medium">
+                {toastMessage.text}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Main Screen Body based on Active Tab */}
         <div className="flex-1 relative overflow-hidden">

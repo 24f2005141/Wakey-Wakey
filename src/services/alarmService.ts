@@ -7,13 +7,39 @@ import {
   query,
   where,
   onSnapshot,
-  getDocs,
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { Alarm } from '../types';
 
 const ALARMS_COLLECTION = 'alarms';
+const LOCAL_STORAGE_KEY = 'wakey_wakey_alarms_cache';
+
+/**
+ * Get alarms from local storage cache
+ */
+export function getLocalAlarms(): Alarm[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn('Failed to read local alarms:', err);
+    return [];
+  }
+}
+
+/**
+ * Save alarms to local storage cache
+ */
+export function saveLocalAlarms(alarms: Alarm[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(alarms));
+  } catch (err) {
+    console.warn('Failed to save local alarms cache:', err);
+  }
+}
 
 /**
  * Subscribe in real-time to the current user's alarms
@@ -24,7 +50,6 @@ export function subscribeToUserAlarms(
   onError?: (error: Error) => void
 ) {
   if (!userId) {
-    onAlarmsUpdate([]);
     return () => {};
   }
 
@@ -61,6 +86,7 @@ export function subscribeToUserAlarms(
 
       // Sort by creation time descending
       items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      saveLocalAlarms(items);
       onAlarmsUpdate(items);
     },
     (error) => {
@@ -74,16 +100,12 @@ export function subscribeToUserAlarms(
 }
 
 /**
- * Create or update an alarm in Firestore
+ * Create or update an alarm in Firestore & local cache
  */
 export async function saveAlarmToFirestore(
   alarm: Omit<Alarm, 'id' | 'createdAt'> & { id?: string; createdAt?: number }
 ): Promise<string> {
-  const currentUserId = auth.currentUser?.uid;
-  if (!currentUserId) {
-    throw new Error('User must be authenticated to save an alarm.');
-  }
-
+  const currentUserId = auth.currentUser?.uid || alarm.userId || 'guest_user';
   const id = alarm.id || `alarm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const path = `${ALARMS_COLLECTION}/${id}`;
 
@@ -101,18 +123,27 @@ export async function saveAlarmToFirestore(
     updatedAt: Date.now(),
   };
 
-  try {
-    await setDoc(doc(db, ALARMS_COLLECTION, id), payload, { merge: true });
-    return id;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+  // If user is authenticated, sync to Firestore
+  if (auth.currentUser?.uid) {
+    try {
+      await setDoc(doc(db, ALARMS_COLLECTION, id), payload, { merge: true });
+    } catch (error) {
+      try {
+        handleFirestoreError(error, OperationType.WRITE, path);
+      } catch (e) {
+        console.warn('Firestore write warning (saved locally):', e);
+      }
+    }
   }
+
+  return id;
 }
 
 /**
  * Toggle an alarm's enabled status in Firestore
  */
 export async function toggleAlarmInFirestore(id: string, enabled: boolean): Promise<void> {
+  if (!auth.currentUser?.uid) return;
   const path = `${ALARMS_COLLECTION}/${id}`;
   try {
     await updateDoc(doc(db, ALARMS_COLLECTION, id), {
@@ -120,7 +151,11 @@ export async function toggleAlarmInFirestore(id: string, enabled: boolean): Prom
       updatedAt: Date.now(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    } catch (e) {
+      console.warn('Firestore update warning:', e);
+    }
   }
 }
 
@@ -128,11 +163,16 @@ export async function toggleAlarmInFirestore(id: string, enabled: boolean): Prom
  * Delete an alarm from Firestore
  */
 export async function deleteAlarmFromFirestore(id: string): Promise<void> {
+  if (!auth.currentUser?.uid) return;
   const path = `${ALARMS_COLLECTION}/${id}`;
   try {
     await deleteDoc(doc(db, ALARMS_COLLECTION, id));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    try {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    } catch (e) {
+      console.warn('Firestore delete warning:', e);
+    }
   }
 }
 

@@ -34,12 +34,16 @@ export const AlarmTriggeredScreen: React.FC<AlarmTriggeredScreenProps> = ({
     alarm.lng
   );
 
-  const handleDismiss = () => {
+  const handleDismiss = (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     stopAlarmSound();
     try {
       confetti({
-        particleCount: 80,
-        spread: 70,
+        particleCount: 60,
+        spread: 60,
         origin: { y: 0.7 },
         colors: ['#ffa8bf', '#f06292', '#ffffff', '#ff4081'],
       });
@@ -49,7 +53,11 @@ export const AlarmTriggeredScreen: React.FC<AlarmTriggeredScreenProps> = ({
     onDismiss();
   };
 
-  const handleSnooze = () => {
+  const handleSnooze = (e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     stopAlarmSound();
     onSnooze(5);
   };

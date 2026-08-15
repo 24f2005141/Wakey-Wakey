@@ -1,0 +1,18 @@
+{
+  "name": "Wakey Wakey - Location Alarm",
+  "short_name": "Wakey Wakey",
+  "description": "Location-based alarm app to wake you up before your transit stop or destination.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12060c",
+  "theme_color": "#12060c",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23701533'/><path d='M50 25v25l18 10' stroke='%23ffa8bf' stroke-width='6' stroke-linecap='round'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

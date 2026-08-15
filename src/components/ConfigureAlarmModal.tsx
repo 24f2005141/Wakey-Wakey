@@ -40,6 +40,19 @@ export const ConfigureAlarmModal: React.FC<ConfigureAlarmModalProps> = ({
   const markerRef = useRef<L.Marker | null>(null);
   const routeLineRef = useRef<L.Polyline | null>(null);
 
+  // Sync state if initialAlarm changes
+  useEffect(() => {
+    if (initialAlarm) {
+      if (initialAlarm.name !== undefined) setName(initialAlarm.name);
+      if (initialAlarm.lat !== undefined) setLat(initialAlarm.lat);
+      if (initialAlarm.lng !== undefined) setLng(initialAlarm.lng);
+      if (initialAlarm.radius !== undefined) setRadius(initialAlarm.radius);
+      if (initialAlarm.sound !== undefined) setSound(initialAlarm.sound);
+      if (initialAlarm.vibration !== undefined) setVibration(initialAlarm.vibration);
+      if (initialAlarm.alarmTone !== undefined) setAlarmTone(initialAlarm.alarmTone);
+    }
+  }, [initialAlarm]);
+
   // Search debounce effect
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -199,6 +212,28 @@ export const ConfigureAlarmModal: React.FC<ConfigureAlarmModalProps> = ({
       });
       markerRef.current = marker;
 
+      // Tap-to-place destination pin anywhere on mini map
+      map.on('click', async (e: L.LeafletMouseEvent) => {
+        const { lat: clickLat, lng: clickLng } = e.latlng;
+        setLat(clickLat);
+        setLng(clickLng);
+        if (markerRef.current) markerRef.current.setLatLng([clickLat, clickLng]);
+        if (circleRef.current) circleRef.current.setLatLng([clickLat, clickLng]);
+        if (routeLineRef.current) {
+          routeLineRef.current.setLatLngs([
+            [userLocation.lat, userLocation.lng],
+            [clickLat, clickLng],
+          ]);
+        }
+        const info = await reverseGeocode(clickLat, clickLng);
+        setName((prev) => {
+          if (!prev || prev === 'Destination Stop' || prev.startsWith('Pinned Location')) {
+            return info.name;
+          }
+          return prev;
+        });
+      });
+
       // Geofence Circle
       const circle = L.circle([lat, lng], {
         radius: radius,
@@ -218,9 +253,10 @@ export const ConfigureAlarmModal: React.FC<ConfigureAlarmModalProps> = ({
 
       miniMapInstanceRef.current = map;
 
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 150);
+      // Ensure map tiles render correctly immediately and after transitions
+      setTimeout(() => map.invalidateSize(), 50);
+      setTimeout(() => map.invalidateSize(), 200);
+      setTimeout(() => map.invalidateSize(), 450);
     }
 
     return () => {
@@ -247,20 +283,17 @@ export const ConfigureAlarmModal: React.FC<ConfigureAlarmModalProps> = ({
   };
 
   const handleSave = () => {
-    if (!name.trim()) {
-      setName('Destination Stop');
-    }
-
+    const finalName = name.trim() || 'Destination Stop';
     onSave({
       id: initialAlarm?.id,
-      name: name.trim() || 'Destination Stop',
-      lat,
-      lng,
-      radius,
+      name: finalName,
+      lat: Number(lat),
+      lng: Number(lng),
+      radius: Number(radius) || 500,
       enabled: true,
-      sound,
-      vibration,
-      alarmTone,
+      sound: Boolean(sound),
+      vibration: Boolean(vibration),
+      alarmTone: alarmTone || 'gentle_chime',
     });
   };
 
