@@ -1,0 +1,127 @@
+{
+  "entities": {
+    "alarm": {
+      "title": "Alarm",
+      "description": "A geofenced location alarm configured by a user",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the alarm document"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Display name or destination name for the alarm"
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude of the target destination"
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude of the target destination"
+        },
+        "radius": {
+          "type": "number",
+          "description": "Geofence trigger boundary radius in meters"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether the alarm is actively monitoring"
+        },
+        "sound": {
+          "type": "boolean",
+          "description": "Whether audio chime should play when triggered"
+        },
+        "vibration": {
+          "type": "boolean",
+          "description": "Whether vibration haptics should pulse when triggered"
+        },
+        "alarmTone": {
+          "type": "string",
+          "description": "Identifier of the sound tone to play"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the user who owns this alarm"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Epoch timestamp in milliseconds when alarm was created"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Epoch timestamp in milliseconds when alarm was last updated"
+        }
+      },
+      "required": [
+        "name",
+        "lat",
+        "lng",
+        "radius",
+        "enabled",
+        "sound",
+        "vibration",
+        "userId",
+        "createdAt"
+      ]
+    },
+    "locationLog": {
+      "title": "LocationLog",
+      "description": "Logged location data when a user opens or runs the application",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the location log"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the user"
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude coordinate"
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude coordinate"
+        },
+        "accuracy": {
+          "type": "number",
+          "description": "GPS accuracy in meters"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source of location (e.g. gps, ip_coarse, locale_default)"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Timestamp of the location fix in epoch ms"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp when this log was created in epoch ms"
+        }
+      },
+      "required": [
+        "userId",
+        "lat",
+        "lng",
+        "timestamp",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/alarms/{alarmId}": {
+      "schema": "alarm",
+      "description": "User created location alarms"
+    },
+    "/location_logs/{logId}": {
+      "schema": "locationLog",
+      "description": "User app-open location testing logs"
+    }
+  }
+}

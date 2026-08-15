@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-serif: 'Fraunces', Georgia, serif;
+    --font-mono: 'Space Mono', monospace;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+  }
+
+  .font-fraunces {
+    font-family: 'Fraunces', Georgia, serif;
+  }
+
+  .font-spacemono {
+    font-family: 'Space Mono', monospace;
+  }
+}
+
+/* Custom leaflet tweaks for dark app context */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #d4dadc;
+}
+
+/* Subtle map filter option if desired or clean bright OSM map as in screenshot */
+.clean-map .leaflet-tile {
+  filter: contrast(1.03) saturate(1.08);
+}
+
+/* Hide default leaflet attribution watermark for clean mobile UI mockup or subtle */
+.leaflet-control-attribution {
+  font-size: 8px !important;
+  opacity: 0.6;
+  background: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* Pulsing radar animation */
+@keyframes radarPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.animate-radar {
+  animation: radarPulse 2.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
+/* Smooth custom range styling */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffa8bf;
+  border: 3px solid #1a0a13;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(255, 168, 191, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffa8bf;
+  border: 3px solid #1a0a13;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(255, 168, 191, 0.5);
+}
+
