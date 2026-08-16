@@ -17,6 +17,8 @@ import {
   logUserLocationToFirestore,
   getLocalAlarms,
   saveLocalAlarms,
+  getDefaultAlarmTone,
+  saveDefaultAlarmTone,
 } from './services/alarmService';
 import { User } from 'firebase/auth';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
@@ -24,6 +26,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [alarms, setAlarms] = useState<Alarm[]>(() => getLocalAlarms());
+  const [defaultTone, setDefaultTone] = useState<string>(() => getDefaultAlarmTone());
   const [isLoadingAlarms, setIsLoadingAlarms] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
 
@@ -32,6 +35,18 @@ export default function App() {
     setTimeout(() => {
       setToastMessage((prev) => (prev?.text === text ? null : prev));
     }, 3200);
+  };
+
+  const handleSelectDefaultTone = (toneId: string) => {
+    setDefaultTone(toneId);
+    saveDefaultAlarmTone(toneId);
+    const toneNames: Record<string, string> = {
+      gentle_chime: 'Gentle Wake Arpeggio',
+      station_bell: 'Transit Station Bell',
+      subway_alert: 'Subway Arrival Chime',
+      urgency_pulse: 'Urgent Transit Pulse',
+    };
+    showToast(`Default tone set to "${toneNames[toneId] || toneId}"`, 'info');
   };
 
   // User location (default: detected locale/India coordinate or GPS)
@@ -50,7 +65,6 @@ export default function App() {
   const [editingAlarm, setEditingAlarm] = useState<Alarm | null>(null);
   const [newAlarmPreset, setNewAlarmPreset] = useState<{ lat: number; lng: number; name: string } | null>(null);
   const [triggeredAlarm, setTriggeredAlarm] = useState<Alarm | null>(null);
-  const [isSimulatedMovement, setIsSimulatedMovement] = useState(false);
 
   // Initialize Firebase Auth
   useEffect(() => {
@@ -99,9 +113,9 @@ export default function App() {
   // Track whether initial startup location has been logged to Firebase
   const hasLoggedStartupLocationRef = useRef(false);
 
-  // Log user's location to Firebase on app startup once user is authenticated
+  // Log user's location to Firebase on app startup
   useEffect(() => {
-    if (!currentUser?.uid || hasLoggedStartupLocationRef.current) return;
+    if (hasLoggedStartupLocationRef.current) return;
 
     if (userLocation.lat && userLocation.lng) {
       hasLoggedStartupLocationRef.current = true;
@@ -112,15 +126,14 @@ export default function App() {
           accuracy: userLocation.accuracy,
           timestamp: userLocation.timestamp,
         },
-        userLocation.accuracy ? 'browser_gps' : 'app_startup_detect'
+        userLocation.accuracy ? 'browser_gps' : 'app_startup_detect',
+        currentUser?.uid || 'anonymous_tester'
       );
     }
   }, [currentUser?.uid, userLocation.lat, userLocation.lng, userLocation.accuracy]);
 
   // Real Geolocation Watcher + IP Coarse Geolocate Fallback
   useEffect(() => {
-    if (isSimulatedMovement) return;
-
     let hasReceivedGps = false;
 
     // Quick coarse IP geolocate so map starts at user's real city if GPS is delayed or permissions pending
@@ -139,7 +152,7 @@ export default function App() {
           }));
           if (currentUser?.uid && !hasLoggedStartupLocationRef.current) {
             hasLoggedStartupLocationRef.current = true;
-            logUserLocationToFirestore(newLoc, 'ip_coarse_geolocate');
+            logUserLocationToFirestore(newLoc, 'ip_coarse_geolocate', currentUser.uid);
           }
         }
       })
@@ -162,7 +175,7 @@ export default function App() {
           };
           setUserLocation(newLoc);
           if (currentUser?.uid) {
-            logUserLocationToFirestore(newLoc, 'gps_initial_fix');
+            logUserLocationToFirestore(newLoc, 'gps_initial_fix', currentUser.uid);
           }
         },
         (err) => {
@@ -194,46 +207,7 @@ export default function App() {
         navigator.geolocation.clearWatch(watchId);
       };
     }
-  }, [isSimulatedMovement, currentUser?.uid]);
-
-  // Commute Simulation Engine: gently steps user toward first active alarm
-  useEffect(() => {
-    if (!isSimulatedMovement) return;
-
-    const activeAlarm = alarms.find((a) => a.enabled);
-    if (!activeAlarm) return;
-
-    const interval = setInterval(() => {
-      setUserLocation((prev) => {
-        const step = 0.0004; // small delta ~ 40m
-        const dLat = activeAlarm.lat - prev.lat;
-        const dLng = activeAlarm.lng - prev.lng;
-        const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-
-        if (dist < 0.0002) {
-          // Reached destination!
-          return {
-            ...prev,
-            lat: activeAlarm.lat,
-            lng: activeAlarm.lng,
-            timestamp: Date.now(),
-          };
-        }
-
-        const newLat = prev.lat + (dLat / dist) * step;
-        const newLng = prev.lng + (dLng / dist) * step;
-
-        return {
-          lat: newLat,
-          lng: newLng,
-          timestamp: Date.now(),
-          isSimulated: true,
-        };
-      });
-    }, 1200);
-
-    return () => clearInterval(interval);
-  }, [isSimulatedMovement, alarms]);
+  }, [currentUser?.uid]);
 
   // Live Geofencing Engine: Checks if user entered alarm radius
   useEffect(() => {
@@ -302,7 +276,7 @@ export default function App() {
       enabled: alarmData.enabled,
       sound: alarmData.sound,
       vibration: alarmData.vibration,
-      alarmTone: alarmData.alarmTone,
+      alarmTone: alarmData.alarmTone || (defaultTone as any) || 'gentle_chime',
       createdAt: alarmData.createdAt || Date.now(),
       updatedAt: Date.now(),
     };
@@ -369,11 +343,6 @@ export default function App() {
         return updated;
       });
 
-      // Stop simulator if it was active
-      if (isSimulatedMovement) {
-        setIsSimulatedMovement(false);
-      }
-
       showToast(`Destination reached! Alarm dismissed for "${currentTriggered.name}".`, 'success');
 
       // Persist disabled state in Firestore
@@ -432,128 +401,123 @@ export default function App() {
   };
 
   return (
-    <main className="w-screen h-screen bg-[#0d0408] flex items-center justify-center p-0 md:p-4 selection:bg-[#ffa8bf] selection:text-[#541229]">
-      {/* Mobile Frame Mockup Container */}
-      <div
-        id="app-container"
-        className="relative w-full h-full md:max-w-[430px] md:max-h-[920px] bg-[#12060c] md:rounded-[44px] md:shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_0_12px_#230d19] md:border md:border-[#ffa8bf]/20 overflow-hidden flex flex-col"
-      >
-        {/* Dynamic Island / Top Speaker Notch on Desktop view */}
-        <div className="hidden md:flex absolute top-2 left-1/2 -translate-x-1/2 w-28 h-4 bg-black rounded-full z-40 items-center justify-center">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#1b0a13] mr-2" />
-          <div className="w-10 h-1 bg-[#2b0f1e] rounded-full" />
-        </div>
-
-        {/* Floating Notification Toast */}
-        {toastMessage && (
-          <div className="absolute top-12 left-4 right-4 z-[9999] pointer-events-none flex justify-center animate-in fade-in slide-in-from-top-3 duration-200">
-            <div className="bg-[#240d1a]/95 backdrop-blur-md border border-[#ffa8bf]/50 text-white px-4 py-2.5 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.8)] flex items-center gap-2.5 max-w-sm">
-              {toastMessage.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-[#ffa8bf] shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-[#e57373] shrink-0" />
-              )}
-              <span className="font-spacemono text-xs text-[#fce4ec] truncate font-medium">
-                {toastMessage.text}
-              </span>
-            </div>
+    <main className="w-full h-screen h-[100dvh] bg-[#12060c] flex flex-col overflow-hidden selection:bg-[#ffa8bf] selection:text-[#541229]">
+      {/* Floating Notification Toast */}
+      {toastMessage && (
+        <div className="absolute top-5 left-4 right-4 md:left-auto md:right-8 z-[10001] pointer-events-none flex justify-center md:justify-end animate-in fade-in slide-in-from-top-3 duration-200">
+          <div className="bg-[#240d1a]/95 backdrop-blur-md border border-[#ffa8bf]/50 text-white px-4 py-2.5 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.8)] flex items-center gap-2.5 max-w-sm">
+            {toastMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-[#ffa8bf] shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-[#e57373] shrink-0" />
+            )}
+            <span className="font-spacemono text-xs text-[#fce4ec] truncate font-medium">
+              {toastMessage.text}
+            </span>
           </div>
+        </div>
+      )}
+
+      {/* Main Screen Body based on Active Tab */}
+      <div className="flex-1 relative overflow-hidden flex flex-col h-full min-h-0">
+        {activeTab === 'map' && (
+          <MapView
+            userLocation={userLocation}
+            alarms={alarms}
+            onOpenNewAlarm={handleOpenNewAlarm}
+            onSelectAlarm={handleSelectAlarm}
+            onRecenterUser={handleRecenterUser}
+          />
         )}
 
-        {/* Main Screen Body based on Active Tab */}
-        <div className="flex-1 relative overflow-hidden">
-          {activeTab === 'map' && (
-            <MapView
-              userLocation={userLocation}
-              alarms={alarms}
-              onOpenNewAlarm={handleOpenNewAlarm}
-              onSelectAlarm={handleSelectAlarm}
-              onRecenterUser={handleRecenterUser}
-            />
-          )}
+        {activeTab === 'alarms' && (
+          <AlarmsView
+            alarms={alarms}
+            onToggleAlarm={handleToggleAlarm}
+            onSelectAlarm={handleSelectAlarm}
+            onOpenNewAlarm={() => handleOpenNewAlarm()}
+            onDeleteAlarm={handleDeleteAlarm}
+            onTestTriggerAlarm={handleTestTrigger}
+          />
+        )}
 
-          {activeTab === 'alarms' && (
-            <AlarmsView
-              alarms={alarms}
-              onToggleAlarm={handleToggleAlarm}
-              onSelectAlarm={handleSelectAlarm}
-              onOpenNewAlarm={() => handleOpenNewAlarm()}
-              onDeleteAlarm={handleDeleteAlarm}
-              onTestTriggerAlarm={handleTestTrigger}
-            />
-          )}
-
-          {activeTab === 'settings' && (
-            <SettingsView
-              isSimulated={isSimulatedMovement}
-              onToggleSimulation={() => setIsSimulatedMovement(!isSimulatedMovement)}
-              onTriggerTestAlarm={() => {
-                if (alarms.length > 0) {
-                  handleTestTrigger(alarms[0]);
-                } else {
-                  handleTestTrigger({
-                    id: 'test-preview-alarm',
-                    userId: currentUser?.uid || '',
-                    name: 'Grand Central Terminal',
-                    lat: userLocation.lat + 0.005,
-                    lng: userLocation.lng + 0.005,
-                    radius: 500,
-                    enabled: true,
-                    sound: true,
-                    vibration: true,
-                    alarmTone: 'gentle_chime',
-                    createdAt: Date.now(),
-                  });
-                }
-              }}
-            />
-          )}
-        </div>
-
-        {/* Bottom Navigation Bar */}
-        <NavigationBar
-          activeTab={activeTab}
-          onChangeTab={setActiveTab}
-          activeAlarmsCount={alarms.filter((a) => a.enabled).length}
-        />
-
-        {/* Modal: Screen 3 (Configure Alarm) */}
-        {isConfiguring && (
-          <ConfigureAlarmModal
-            initialAlarm={
-              editingAlarm ||
-              (newAlarmPreset
-                ? {
-                    name: newAlarmPreset.name,
-                    lat: newAlarmPreset.lat,
-                    lng: newAlarmPreset.lng,
-                    radius: 500,
-                    sound: true,
-                    vibration: true,
-                  }
-                : null)
-            }
-            userLocation={userLocation}
-            onSave={handleSaveAlarm}
-            onDelete={editingAlarm ? handleDeleteAlarm : undefined}
-            onClose={() => {
-              setIsConfiguring(false);
-              setEditingAlarm(null);
-              setNewAlarmPreset(null);
+        {activeTab === 'settings' && (
+          <SettingsView
+            defaultTone={defaultTone}
+            onSelectDefaultTone={handleSelectDefaultTone}
+            onTriggerTestAlarm={() => {
+              if (alarms.length > 0) {
+                handleTestTrigger({
+                  ...alarms[0],
+                  alarmTone: (defaultTone as any) || alarms[0].alarmTone || 'gentle_chime',
+                });
+              } else {
+                handleTestTrigger({
+                  id: 'test-preview-alarm',
+                  userId: currentUser?.uid || '',
+                  name: 'Grand Central Terminal',
+                  lat: userLocation.lat + 0.005,
+                  lng: userLocation.lng + 0.005,
+                  radius: 500,
+                  enabled: true,
+                  sound: true,
+                  vibration: true,
+                  alarmTone: (defaultTone as any) || 'gentle_chime',
+                  createdAt: Date.now(),
+                });
+              }
             }}
           />
         )}
-
-        {/* Fullscreen Alert: Screen 4 (Alarm Triggered) */}
-        {triggeredAlarm && (
-          <AlarmTriggeredScreen
-            alarm={triggeredAlarm}
-            userLocation={userLocation}
-            onDismiss={handleDismissTriggeredAlarm}
-            onSnooze={handleSnoozeTriggeredAlarm}
-          />
-        )}
       </div>
+
+      {/* Bottom Navigation Bar (Map, Alarms, Settings) */}
+      <NavigationBar
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
+        activeAlarmsCount={alarms.filter((a) => a.enabled).length}
+        onOpenNewAlarm={() => handleOpenNewAlarm()}
+        userLocation={userLocation}
+      />
+
+      {/* Modal: Configure Alarm */}
+      {isConfiguring && (
+        <ConfigureAlarmModal
+          initialAlarm={
+            editingAlarm ||
+            (newAlarmPreset
+              ? {
+                  name: newAlarmPreset.name,
+                  lat: newAlarmPreset.lat,
+                  lng: newAlarmPreset.lng,
+                  radius: 500,
+                  sound: true,
+                  vibration: true,
+                  alarmTone: defaultTone as any,
+                }
+              : null)
+          }
+          userLocation={userLocation}
+          defaultTone={defaultTone}
+          onSave={handleSaveAlarm}
+          onDelete={editingAlarm ? handleDeleteAlarm : undefined}
+          onClose={() => {
+            setIsConfiguring(false);
+            setEditingAlarm(null);
+            setNewAlarmPreset(null);
+          }}
+        />
+      )}
+
+      {/* Fullscreen Alert: Alarm Triggered */}
+      {triggeredAlarm && (
+        <AlarmTriggeredScreen
+          alarm={triggeredAlarm}
+          userLocation={userLocation}
+          onDismiss={handleDismissTriggeredAlarm}
+          onSnooze={handleSnoozeTriggeredAlarm}
+        />
+      )}
     </main>
   );
 }

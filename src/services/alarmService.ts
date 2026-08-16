@@ -177,6 +177,33 @@ export async function deleteAlarmFromFirestore(id: string): Promise<void> {
 }
 
 const LOCATION_LOGS_COLLECTION = 'location_logs';
+const DEFAULT_TONE_KEY = 'wakey_default_alarm_tone';
+
+/**
+ * Retrieve saved default alarm tone
+ */
+export function getDefaultAlarmTone(): 'gentle_chime' | 'station_bell' | 'urgency_pulse' | 'subway_alert' {
+  try {
+    const tone = localStorage.getItem(DEFAULT_TONE_KEY);
+    if (tone && ['gentle_chime', 'station_bell', 'urgency_pulse', 'subway_alert'].includes(tone)) {
+      return tone as any;
+    }
+  } catch (err) {
+    console.warn('Failed to read default tone preference:', err);
+  }
+  return 'gentle_chime';
+}
+
+/**
+ * Save user's default alarm tone preference
+ */
+export function saveDefaultAlarmTone(tone: string): void {
+  try {
+    localStorage.setItem(DEFAULT_TONE_KEY, tone);
+  } catch (err) {
+    console.warn('Failed to save default tone preference:', err);
+  }
+}
 
 export interface LocationLogEntry {
   id?: string;
@@ -196,15 +223,13 @@ export async function logUserLocationToFirestore(
   location: {
     lat: number;
     lng: number;
-    accuracy?: number;
+    accuracy?: number | null;
     timestamp?: number;
   },
-  source = 'app_startup'
+  source = 'app_startup',
+  userId?: string
 ): Promise<string | null> {
-  const currentUserId = auth.currentUser?.uid;
-  if (!currentUserId) {
-    return null;
-  }
+  const currentUserId = userId || auth.currentUser?.uid || 'anonymous_tester';
 
   const logId = `loc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const path = `${LOCATION_LOGS_COLLECTION}/${logId}`;
@@ -213,11 +238,14 @@ export async function logUserLocationToFirestore(
     userId: currentUserId,
     lat: Number(location.lat),
     lng: Number(location.lng),
-    accuracy: location.accuracy !== undefined ? Number(location.accuracy) : null,
     source,
     timestamp: location.timestamp || Date.now(),
     createdAt: Date.now(),
   };
+
+  if (location.accuracy !== undefined && location.accuracy !== null) {
+    payload.accuracy = Number(location.accuracy);
+  }
 
   try {
     await setDoc(doc(db, LOCATION_LOGS_COLLECTION, logId), payload);

@@ -7,8 +7,23 @@
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
   body {
     font-family: var(--font-sans);
+    background-color: #12060c;
   }
 
   .font-fraunces {
@@ -18,6 +33,27 @@
   .font-spacemono {
     font-family: 'Space Mono', monospace;
   }
+}
+
+/* Custom sleek dark scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3e1327 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3e1327;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ffa8bf;
 }
 
 /* Custom leaflet tweaks for dark app context */

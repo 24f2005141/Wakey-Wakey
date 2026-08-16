@@ -376,7 +376,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
   return (
     <div id="map-screen-view" className="relative w-full h-full flex flex-col overflow-hidden select-none">
-      {/* Top Floating Search Capsule Bar - Elevated z-index above all Leaflet layers */}
+      {/* Top Floating Search Capsule Bar - Clean overlay on map */}
       <div 
         className="absolute top-3 left-4 right-4 z-[1000] pointer-events-auto"
         onMouseDown={(e) => e.stopPropagation()}
@@ -494,7 +494,7 @@ export const MapView: React.FC<MapViewProps> = ({
       {/* Floating Selected Pin Callout Card */}
       {selectedTapLocation && (
         <div 
-          className="absolute bottom-20 left-4 right-4 z-[1050] animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto"
+          className="absolute bottom-20 left-4 right-4 z-[1000] animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto"
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
@@ -535,7 +535,7 @@ export const MapView: React.FC<MapViewProps> = ({
         </div>
       )}
 
-      {/* Floating Bottom Action Buttons - Elevated z-index */}
+      {/* Floating Bottom Action Buttons */}
       <div 
         className="absolute bottom-4 left-4 right-4 z-[1000] flex items-center justify-between pointer-events-none"
       >

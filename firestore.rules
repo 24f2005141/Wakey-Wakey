@@ -70,9 +70,11 @@ service cloud.firestore {
     match /location_logs/{logId} {
       allow get: if isSignedIn() && existing().userId == request.auth.uid;
       allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn()
-        && isValidId(logId)
-        && incoming().userId == request.auth.uid
+      allow create: if isValidId(logId)
+        && (
+             (isSignedIn() && incoming().userId == request.auth.uid) ||
+             (!isSignedIn() && incoming().userId == 'anonymous_tester')
+           )
         && isValidLocationLog(incoming());
       allow update: if false;
       allow delete: if isSignedIn()
