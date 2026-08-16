@@ -303,12 +303,14 @@ export const ConfigureAlarmModal: React.FC<ConfigureAlarmModalProps> = ({
 
   const handleSave = () => {
     const finalName = name.trim() || 'Destination Stop';
+    const clampedRadius = Math.max(50, Math.min(50000, Number(radius) || 500));
+    
     onSave({
       id: initialAlarm?.id,
-      name: finalName,
+      name: finalName.slice(0, 100),
       lat: Number(lat),
       lng: Number(lng),
-      radius: Number(radius) || 500,
+      radius: clampedRadius,
       enabled: true,
       sound: Boolean(sound),
       vibration: Boolean(vibration),

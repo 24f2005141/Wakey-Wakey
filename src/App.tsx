@@ -21,7 +21,7 @@ import {
   saveDefaultAlarmTone,
 } from './services/alarmService';
 import { User } from 'firebase/auth';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, MapPin } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -29,6 +29,7 @@ export default function App() {
   const [defaultTone, setDefaultTone] = useState<string>(() => getDefaultAlarmTone());
   const [isLoadingAlarms, setIsLoadingAlarms] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+  const [permissionState, setPermissionState] = useState<PermissionState | 'unknown'>('unknown');
 
   const showToast = (text: string, type: 'success' | 'info' = 'success') => {
     setToastMessage({ text, type });
@@ -36,6 +37,17 @@ export default function App() {
       setToastMessage((prev) => (prev?.text === text ? null : prev));
     }, 3200);
   };
+
+  useEffect(() => {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        setPermissionState(result.state);
+        result.onchange = () => {
+          setPermissionState(result.state);
+        };
+      });
+    }
+  }, []);
 
   const handleSelectDefaultTone = (toneId: string) => {
     setDefaultTone(toneId);
@@ -212,6 +224,7 @@ export default function App() {
   // Live Geofencing Engine: Checks if user entered alarm radius
   useEffect(() => {
     if (triggeredAlarm) return; // already alerting
+    if (!userLocation.lat || !userLocation.lng || userLocation.accuracy === undefined) return; // Wait for high accuracy GPS fix, not IP fallback
 
     const now = Date.now();
     for (const alarm of alarms) {
@@ -225,6 +238,7 @@ export default function App() {
         alarm.lng
       );
 
+      // Trigger if within radius.
       if (dist <= alarm.radius) {
         setTriggeredAlarm(alarm);
         break;
@@ -400,6 +414,28 @@ export default function App() {
     await signOutUser();
   };
 
+  const handleRequestLocation = () => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: Date.now(),
+          });
+          setPermissionState('granted');
+          showToast('Location tracking enabled', 'success');
+        },
+        (err) => {
+          console.warn('Geolocation manually requested but failed:', err);
+          showToast('Location request failed. Check settings.', 'info');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  };
+
   return (
     <main className="w-full h-screen h-[100dvh] bg-[#12060c] flex flex-col overflow-hidden selection:bg-[#ffa8bf] selection:text-[#541229]">
       {/* Floating Notification Toast */}
@@ -415,6 +451,27 @@ export default function App() {
               {toastMessage.text}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Permission Banner for WebViews/APK */}
+      {(!userLocation.accuracy && permissionState !== 'granted') && (
+        <div className="bg-[#541229] border-b border-[#ffa8bf]/30 p-3 md:p-4 z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-[#ffa8bf]/20 flex items-center justify-center shrink-0">
+              <MapPin className="w-4 h-4 text-[#ffa8bf]" />
+            </div>
+            <div>
+              <h3 className="font-fraunces text-sm text-white m-0">Location Required</h3>
+              <p className="text-xs text-[#fce4ec]/70 font-spacemono m-0 mt-0.5">Allow background GPS access for alarms to work.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleRequestLocation}
+            className="w-full sm:w-auto px-4 py-2 bg-[#ffa8bf] hover:bg-[#ff8fae] active:scale-95 transition-all text-[#341121] font-spacemono text-xs font-bold uppercase tracking-wider rounded-full shadow-md"
+          >
+            Enable Access
+          </button>
         </div>
       )}
 
