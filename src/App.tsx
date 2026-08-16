@@ -39,13 +39,21 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-        setPermissionState(result.state);
-        result.onchange = () => {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
           setPermissionState(result.state);
-        };
-      });
+          result.onchange = () => {
+            setPermissionState(result.state);
+          };
+        }).catch((err) => {
+          console.warn('navigator.permissions.query failed or is unsupported:', err);
+          setPermissionState('unknown');
+        });
+      }
+    } catch (e) {
+      console.warn('navigator.permissions is not fully supported in this environment:', e);
+      setPermissionState('unknown');
     }
   }, []);
 
