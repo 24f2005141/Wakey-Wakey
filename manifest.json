@@ -1,31 +1,59 @@
 {
-  "background_color": "#0b0106",
-  "dir": "ltr",
-  "display": "standalone",
-  "name": "Wakey Wakey",
-  "orientation": "any",
-  "scope": "/",
+  "name": "Wakey Wakey - Location Alarm",
   "short_name": "Wakey Wakey",
+  "description": "Smart location-based transit alarm that wakes you up before reaching your bus, train, or road destination.",
+  "id": "com.wakeywakey.app",
   "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "orientation": "portrait-primary",
   "theme_color": "#0b0106",
+  "background_color": "#0b0106",
+  "lang": "en-US",
+  "dir": "ltr",
+  "categories": ["travel", "navigation", "utilities", "lifestyle"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/launchericon-512x512.svg",
-      "type": "image/svg+xml",
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192x192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://i.ibb.co/WNTMdzhm/launchericon-512x512.png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any 192x192 512x512",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/favicon.ico",
-      "type": "image/x-icon",
-      "sizes": "48x48"
+      "src": "https://i.ibb.co/WNTMdzhm/launchericon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "id": "wakeywakey"
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Wakey Wakey - Active Location Alarms & Radar Tracking"
+    },
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Wakey Wakey - Desktop & Tablet Multi-Route View"
+    }
+  ]
 }
