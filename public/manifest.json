@@ -1,5 +1,5 @@
 {
-  "background_color": "#12060c",
+  "background_color": "#0b0106",
   "dir": "ltr",
   "display": "standalone",
   "name": "Wakey Wakey",
@@ -7,8 +7,14 @@
   "scope": "/",
   "short_name": "Wakey Wakey",
   "start_url": "/",
-  "theme_color": "#12060c",
+  "theme_color": "#0b0106",
   "icons": [
+    {
+      "src": "/launchericon-512x512.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icon.svg",
       "type": "image/svg+xml",
