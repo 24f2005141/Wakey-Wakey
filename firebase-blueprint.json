@@ -112,12 +112,66 @@
         "timestamp",
         "createdAt"
       ]
+    },
+    "userLocation": {
+      "title": "UserLocation",
+      "description": "Active real-time location record for a user",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the user"
+        },
+        "lat": {
+          "type": "number",
+          "description": "Latitude coordinate"
+        },
+        "lng": {
+          "type": "number",
+          "description": "Longitude coordinate"
+        },
+        "accuracy": {
+          "type": "number",
+          "description": "Location accuracy in meters"
+        },
+        "city": {
+          "type": "string",
+          "description": "Resolved city or station name"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source of location (e.g. gps, internet, manual)"
+        },
+        "method": {
+          "type": "string",
+          "description": "Method used (e.g. wifi_network, ip_lookup, manual, gps)"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Timestamp of the location fix in epoch ms"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp when location was updated in epoch ms"
+        }
+      },
+      "required": [
+        "userId",
+        "lat",
+        "lng",
+        "timestamp",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
     "/alarms/{alarmId}": {
       "schema": "alarm",
       "description": "User created location alarms"
+    },
+    "/user_locations/{userId}": {
+      "schema": "userLocation",
+      "description": "Current active location for a user"
     },
     "/location_logs/{logId}": {
       "schema": "locationLog",

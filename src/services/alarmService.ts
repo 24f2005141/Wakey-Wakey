@@ -177,6 +177,7 @@ export async function deleteAlarmFromFirestore(id: string): Promise<void> {
 }
 
 const LOCATION_LOGS_COLLECTION = 'location_logs';
+const USER_LOCATIONS_COLLECTION = 'user_locations';
 const DEFAULT_TONE_KEY = 'wakey_default_alarm_tone';
 
 /**
@@ -211,9 +212,69 @@ export interface LocationLogEntry {
   lat: number;
   lng: number;
   accuracy?: number;
+  city?: string;
   source?: string;
+  method?: string;
   timestamp: number;
   createdAt?: number;
+}
+
+/**
+ * Sync the user's current live location directly to Firestore in /user_locations/{userId}
+ * and append a timestamped diagnostic record in /location_logs/{logId}
+ */
+export async function syncUserLocationToFirestore(
+  location: {
+    lat: number;
+    lng: number;
+    accuracy?: number | null;
+    city?: string | null;
+    source?: string;
+    method?: string;
+    timestamp?: number;
+  },
+  userId?: string
+): Promise<void> {
+  const currentUserId = userId || auth.currentUser?.uid || 'anonymous_tester';
+  const path = `${USER_LOCATIONS_COLLECTION}/${currentUserId}`;
+
+  const payload: Record<string, any> = {
+    userId: currentUserId,
+    lat: Number(location.lat),
+    lng: Number(location.lng),
+    source: location.source || 'gps',
+    timestamp: location.timestamp || Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  if (location.accuracy !== undefined && location.accuracy !== null) {
+    payload.accuracy = Number(location.accuracy);
+  }
+  if (location.city) {
+    payload.city = String(location.city).slice(0, 100);
+  }
+  if (location.method) {
+    payload.method = String(location.method);
+  }
+
+  try {
+    await setDoc(doc(db, USER_LOCATIONS_COLLECTION, currentUserId), payload, { merge: true });
+    console.info(`[Firebase Location Sync] Successfully synced live location to Firestore (/user_locations/${currentUserId}):`, {
+      lat: location.lat,
+      lng: location.lng,
+      city: location.city,
+      source: location.source,
+    });
+  } catch (error) {
+    try {
+      handleFirestoreError(error, OperationType.WRITE, path);
+    } catch (e) {
+      console.warn('[Firebase Location Sync] Warning updating user_locations in Firestore:', e);
+    }
+  }
+
+  // Also record in location_logs
+  await logUserLocationToFirestore(location, location.source || 'live_sync', currentUserId);
 }
 
 /**
@@ -224,6 +285,7 @@ export async function logUserLocationToFirestore(
     lat: number;
     lng: number;
     accuracy?: number | null;
+    city?: string | null;
     timestamp?: number;
   },
   source = 'app_startup',
@@ -245,6 +307,9 @@ export async function logUserLocationToFirestore(
 
   if (location.accuracy !== undefined && location.accuracy !== null) {
     payload.accuracy = Number(location.accuracy);
+  }
+  if (location.city) {
+    payload.city = String(location.city).slice(0, 100);
   }
 
   try {

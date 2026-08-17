@@ -48,6 +48,14 @@ service cloud.firestore {
         && data.createdAt is number;
     }
 
+    function isValidUserLocation(data) {
+      return data.lat is number
+        && data.lng is number
+        && data.userId is string && data.userId.size() > 0 && data.userId.size() <= 128
+        && data.timestamp is number
+        && data.updatedAt is number;
+    }
+
     // Alarms Collection
     match /alarms/{alarmId} {
       allow get: if isSignedIn() && existing().userId == request.auth.uid;
@@ -64,6 +72,19 @@ service cloud.firestore {
       allow delete: if isSignedIn()
         && isValidId(alarmId)
         && existing().userId == request.auth.uid;
+    }
+
+    // Real-time Active User Locations
+    match /user_locations/{userId} {
+      allow get: if (isSignedIn() && request.auth.uid == userId) || (!isSignedIn() && userId == 'anonymous_tester');
+      allow list: if (isSignedIn() && resource.data.userId == request.auth.uid) || (!isSignedIn() && resource.data.userId == 'anonymous_tester');
+      allow create, update: if isValidId(userId)
+        && (
+             (isSignedIn() && request.auth.uid == userId && incoming().userId == request.auth.uid) ||
+             (!isSignedIn() && userId == 'anonymous_tester' && incoming().userId == 'anonymous_tester')
+           )
+        && isValidUserLocation(incoming());
+      allow delete: if (isSignedIn() && request.auth.uid == userId);
     }
 
     // Testing Location Logs Collection

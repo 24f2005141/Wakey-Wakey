@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
-import { Search, Mic, Plus, Crosshair, MapPin, X, BellPlus } from 'lucide-react';
+import { Search, Mic, Plus, Crosshair, MapPin, X, BellPlus, BatteryCharging, Wifi, Navigation } from 'lucide-react';
 import { Alarm, UserLocation, LocationSearchResult } from '../types';
 import { searchLocations, reverseGeocode, getDistanceInMeters, formatDistance } from '../utils/geo';
 
@@ -10,6 +10,9 @@ interface MapViewProps {
   onOpenNewAlarm: (preset?: { lat: number; lng: number; name: string }) => void;
   onSelectAlarm: (alarm: Alarm) => void;
   onRecenterUser: () => void;
+  batterySaverMode?: boolean;
+  onToggleBatterySaver?: (enabled: boolean) => void;
+  onSetUserLocation?: (loc: { lat: number; lng: number; name?: string }) => void;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -18,6 +21,9 @@ export const MapView: React.FC<MapViewProps> = ({
   onOpenNewAlarm,
   onSelectAlarm,
   onRecenterUser,
+  batterySaverMode = false,
+  onToggleBatterySaver,
+  onSetUserLocation,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -203,9 +209,20 @@ export const MapView: React.FC<MapViewProps> = ({
     const map = mapInstanceRef.current;
     if (!map) return;
 
+    const isInternetMode = batterySaverMode || userLocation.source === 'internet';
+
     const userIcon = L.divIcon({
       className: 'user-loc-marker',
-      html: `
+      html: isInternetMode
+        ? `
+        <div class="relative flex items-center justify-center w-9 h-9">
+          <div class="absolute w-9 h-9 rounded-full bg-[#69f0ae]/25 animate-ping"></div>
+          <div class="relative w-5.5 h-5.5 rounded-full bg-[#0a1e11] border-2 border-[#69f0ae] flex items-center justify-center shadow-lg">
+            <div class="w-2.5 h-2.5 rounded-full bg-[#69f0ae]"></div>
+          </div>
+        </div>
+      `
+        : `
         <div class="relative flex items-center justify-center w-8 h-8">
           <div class="absolute w-8 h-8 rounded-full bg-[#ffa8bf]/30 animate-ping"></div>
           <div class="relative w-5 h-5 rounded-full bg-white border-[3px] border-black flex items-center justify-center shadow-lg">
@@ -213,8 +230,8 @@ export const MapView: React.FC<MapViewProps> = ({
           </div>
         </div>
       `,
-      iconSize: [32, 32],
-      iconAnchor: [16, 16],
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
     });
 
     if (!userMarkerRef.current) {
@@ -223,9 +240,10 @@ export const MapView: React.FC<MapViewProps> = ({
         zIndexOffset: 1000,
       }).addTo(map);
     } else {
+      userMarkerRef.current.setIcon(userIcon);
       userMarkerRef.current.setLatLng([userLocation.lat, userLocation.lng]);
     }
-  }, [userLocation.lat, userLocation.lng]);
+  }, [userLocation.lat, userLocation.lng, userLocation.source, batterySaverMode]);
 
   // Update Alarms and Geofence Circles on Map
   useEffect(() => {
@@ -431,6 +449,46 @@ export const MapView: React.FC<MapViewProps> = ({
           </button>
         </div>
 
+        {/* Quick Power Mode Pill */}
+        {!isSearchFocused && (
+          <div className="mt-2 flex items-center justify-between px-1">
+            <button
+              id="map-battery-mode-pill"
+              type="button"
+              onClick={() => onToggleBatterySaver?.(!batterySaverMode)}
+              className={`backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-spacemono flex items-center gap-1.5 shadow-md transition-all cursor-pointer border ${
+                batterySaverMode
+                  ? 'bg-[#122818]/90 border-[#2e7d32]/80 text-[#69f0ae] hover:bg-[#183921]'
+                  : 'bg-[#240a17]/90 border-[#ffa8bf]/30 text-[#ffa8bf] hover:bg-[#340f22]'
+              }`}
+              title={batterySaverMode ? 'Battery Saver Active: Tap to switch to High Precision GPS' : 'GPS Active: Tap to switch to Battery Saver (Internet)'}
+            >
+              <span
+                className={`w-2 h-2 rounded-full inline-block animate-pulse ${
+                  batterySaverMode ? 'bg-[#69f0ae]' : 'bg-[#ffa8bf]'
+                }`}
+              />
+              {batterySaverMode ? (
+                <>
+                  <BatteryCharging className="w-3.5 h-3.5" />
+                  <span>Battery Saver (Internet)</span>
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-3.5 h-3.5" />
+                  <span>GPS Precision</span>
+                </>
+              )}
+            </button>
+
+            {userLocation.city && (
+              <span className="font-spacemono text-[11px] text-[#fce4ec]/70 bg-[#12060c]/80 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-[#3e1327]/60">
+                {userLocation.city}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Search Results / Nearby Suggestions Dropdown */}
         {isSearchFocused && (
           <div className="mt-2 bg-[#1b0a13] border border-[#3e1327] rounded-2xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
@@ -518,14 +576,32 @@ export const MapView: React.FC<MapViewProps> = ({
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={() => setSelectedTapLocation(null)}
-                className="p-2 text-[#9e7a89] hover:text-white rounded-full cursor-pointer"
+                className="p-1.5 text-[#9e7a89] hover:text-white rounded-full cursor-pointer"
                 title="Cancel"
               >
                 <X className="w-4 h-4" />
               </button>
+              {onSetUserLocation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSetUserLocation({
+                      lat: selectedTapLocation.lat,
+                      lng: selectedTapLocation.lng,
+                      name: selectedTapLocation.name,
+                    });
+                    setSelectedTapLocation(null);
+                  }}
+                  className="bg-[#240a17] hover:bg-[#381125] text-[#ffa8bf] border border-[#ffa8bf]/30 font-spacemono text-xs px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow cursor-pointer transition-all active:scale-95"
+                  title="Calibrate your current starting location to this spot"
+                >
+                  <Crosshair className="w-3 h-3" />
+                  <span>Set My Loc</span>
+                </button>
+              )}
               <button
                 onClick={handleConfirmAddAlarmFromPin}
-                className="bg-[#ffa8bf] hover:bg-[#ffbacc] text-[#541229] font-fraunces font-bold text-xs px-3.5 py-2 rounded-full flex items-center gap-1.5 shadow cursor-pointer transition-all active:scale-95"
+                className="bg-[#ffa8bf] hover:bg-[#ffbacc] text-[#541229] font-fraunces font-bold text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow cursor-pointer transition-all active:scale-95"
               >
                 <BellPlus className="w-3.5 h-3.5" />
                 <span>Set Alarm</span>

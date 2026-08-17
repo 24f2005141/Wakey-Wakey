@@ -77,9 +77,16 @@ export const AlarmsView: React.FC<AlarmsViewProps> = ({
           <MapPin className="w-5 h-5" />
         </button>
 
-        <h1 className="font-fraunces text-2xl text-[#ffa8bf] tracking-wide font-normal">
-          Wakey Wakey
-        </h1>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/icon.svg"
+            alt="Wakey Wakey Logo"
+            className="w-7 h-7 rounded-lg shadow-sm border border-[#ffa8bf]/30"
+          />
+          <h1 className="font-fraunces text-2xl text-[#ffa8bf] tracking-wide font-normal">
+            Wakey Wakey
+          </h1>
+        </div>
 
         <button
           onClick={() => setShowSearch(!showSearch)}

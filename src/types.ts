@@ -25,6 +25,10 @@ export interface UserLocation {
   speed?: number;
   timestamp: number;
   isSimulated?: boolean;
+  source?: 'gps' | 'internet' | 'manual';
+  method?: 'wifi_network' | 'ip_lookup' | 'manual' | 'gps';
+  city?: string;
+  country?: string;
 }
 
 export type TabType = 'map' | 'alarms' | 'settings';

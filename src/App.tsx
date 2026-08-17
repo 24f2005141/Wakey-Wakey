@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TabType, Alarm, UserLocation } from './types';
 import { MapView } from './components/MapView';
 import { AlarmsView } from './components/AlarmsView';
@@ -14,12 +14,18 @@ import {
   saveAlarmToFirestore,
   toggleAlarmInFirestore,
   deleteAlarmFromFirestore,
+  syncUserLocationToFirestore,
   logUserLocationToFirestore,
   getLocalAlarms,
   saveLocalAlarms,
   getDefaultAlarmTone,
   saveDefaultAlarmTone,
 } from './services/alarmService';
+import {
+  getBatterySaverMode,
+  saveBatterySaverMode,
+  fetchLocationViaInternet,
+} from './utils/internetLocation';
 import { User } from 'firebase/auth';
 import { CheckCircle2, AlertCircle, MapPin } from 'lucide-react';
 
@@ -27,6 +33,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [alarms, setAlarms] = useState<Alarm[]>(() => getLocalAlarms());
   const [defaultTone, setDefaultTone] = useState<string>(() => getDefaultAlarmTone());
+  const [batterySaverMode, setBatterySaverMode] = useState<boolean>(() => getBatterySaverMode());
+  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
   const [isLoadingAlarms, setIsLoadingAlarms] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
   const [permissionState, setPermissionState] = useState<PermissionState | 'unknown'>('unknown');
@@ -94,6 +102,13 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Sync real-time location to Firestore when user logs in or location changes
+  useEffect(() => {
+    if (currentUser?.uid && userLocation.lat && userLocation.lng) {
+      syncUserLocationToFirestore(userLocation, currentUser.uid);
+    }
+  }, [currentUser?.uid, userLocation.lat, userLocation.lng]);
+
   // Real-time Firestore Alarms Subscription for Current User
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -110,13 +125,6 @@ export default function App() {
             saveLocalAlarms(fetchedAlarms);
             return fetchedAlarms;
           }
-          // If Firestore is empty but user had locally created alarms, sync them up
-          if (prev.length > 0) {
-            prev.forEach((item) => {
-              saveAlarmToFirestore({ ...item, userId: currentUser.uid });
-            });
-            return prev;
-          }
           return prev;
         });
         setIsLoadingAlarms(false);
@@ -130,109 +138,158 @@ export default function App() {
     return () => unsubscribe();
   }, [currentUser?.uid]);
 
-  // Track whether initial startup location has been logged to Firebase
-  const hasLoggedStartupLocationRef = useRef(false);
-
-  // Log user's location to Firebase on app startup
-  useEffect(() => {
-    if (hasLoggedStartupLocationRef.current) return;
-
-    if (userLocation.lat && userLocation.lng) {
-      hasLoggedStartupLocationRef.current = true;
-      logUserLocationToFirestore(
-        {
-          lat: userLocation.lat,
-          lng: userLocation.lng,
-          accuracy: userLocation.accuracy,
-          timestamp: userLocation.timestamp,
-        },
-        userLocation.accuracy ? 'browser_gps' : 'app_startup_detect',
-        currentUser?.uid || 'anonymous_tester'
-      );
+  // Fetch location using Internet / IP geolocation endpoints (Battery Saver)
+  const fetchInternetLocation = useCallback(async (silent = false) => {
+    try {
+      setIsRefreshingLocation(true);
+      const result = await fetchLocationViaInternet();
+      const newLoc: UserLocation = {
+        lat: result.lat,
+        lng: result.lng,
+        accuracy: result.accuracy,
+        city: result.city,
+        country: result.country,
+        source: 'internet',
+        method: result.method,
+        timestamp: result.timestamp,
+        isSimulated: false,
+      };
+      setUserLocation(newLoc);
+      if (!silent) {
+        showToast(
+          result.city
+            ? `Location updated via ${result.method === 'wifi_network' ? 'Wi-Fi/Network' : 'Internet'} (${result.city})`
+            : 'Location updated via Internet',
+          'success'
+        );
+      }
+      syncUserLocationToFirestore(newLoc, currentUser?.uid);
+    } catch (err) {
+      console.warn('Failed to fetch location via internet:', err);
+      if (!silent) {
+        showToast('Failed to update internet location', 'info');
+      }
+    } finally {
+      setIsRefreshingLocation(false);
     }
-  }, [currentUser?.uid, userLocation.lat, userLocation.lng, userLocation.accuracy]);
+  }, [currentUser?.uid]);
 
-  // Real Geolocation Watcher + IP Coarse Geolocate Fallback
+  // Toggle Battery Saver Mode
+  const handleToggleBatterySaver = (enabled: boolean) => {
+    setBatterySaverMode(enabled);
+    saveBatterySaverMode(enabled);
+    if (enabled) {
+      showToast('Battery Saver ON: Location fetched via Internet (GPS off)', 'success');
+      fetchInternetLocation(true);
+    } else {
+      showToast('High Precision GPS Mode restored', 'info');
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const newLoc: UserLocation = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              heading: pos.coords.heading || undefined,
+              speed: pos.coords.speed || undefined,
+              source: 'gps',
+              timestamp: pos.timestamp,
+              isSimulated: false,
+            };
+            setUserLocation(newLoc);
+            syncUserLocationToFirestore(newLoc, currentUser?.uid);
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
+    }
+  };
+
+  // Location Tracking Controller: Switches between Battery Saver (Internet IP) & High Accuracy GPS
   useEffect(() => {
-    let hasReceivedGps = false;
+    if (batterySaverMode) {
+      // In Battery Saver Mode: GPS hardware is NOT activated
+      // Location is fetched via Internet endpoints periodically (every 45s)
+      fetchInternetLocation(true);
+      const intervalId = setInterval(() => {
+        fetchInternetLocation(true);
+      }, 45000);
 
-    // Quick coarse IP geolocate so map starts at user's real city if GPS is delayed or permissions pending
-    fetch('https://freeipapi.com/api/json')
-      .then((res) => res.json())
-      .then((data) => {
-        if (!hasReceivedGps && data && data.latitude && data.longitude) {
-          const newLoc = {
-            lat: data.latitude,
-            lng: data.longitude,
-            timestamp: Date.now(),
-          };
-          setUserLocation((prev) => ({
-            ...prev,
-            ...newLoc,
-          }));
-          if (currentUser?.uid && !hasLoggedStartupLocationRef.current) {
-            hasLoggedStartupLocationRef.current = true;
-            logUserLocationToFirestore(newLoc, 'ip_coarse_geolocate', currentUser.uid);
-          }
-        }
-      })
-      .catch(() => {
-        // ignore IP geolocate error
-      });
+      return () => {
+        clearInterval(intervalId);
+      };
+    }
 
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          hasReceivedGps = true;
-          const newLoc = {
+          const newLoc: UserLocation = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
             heading: pos.coords.heading || undefined,
             speed: pos.coords.speed || undefined,
+            source: 'gps',
             timestamp: pos.timestamp,
             isSimulated: false,
           };
           setUserLocation(newLoc);
-          if (currentUser?.uid) {
-            logUserLocationToFirestore(newLoc, 'gps_initial_fix', currentUser.uid);
-          }
+          syncUserLocationToFirestore(newLoc, currentUser?.uid);
         },
         (err) => {
           console.warn('Geolocation access prompt warning:', err.message);
+          // If GPS denied/times out, fallback to low power internet location
+          fetchInternetLocation(true);
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 8000 }
       );
+
+      let lastSyncTime = 0;
+      let lastSyncLat = 0;
+      let lastSyncLng = 0;
 
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          hasReceivedGps = true;
-          setUserLocation({
+          const newLoc: UserLocation = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
             heading: pos.coords.heading || undefined,
             speed: pos.coords.speed || undefined,
+            source: 'gps',
             timestamp: pos.timestamp,
             isSimulated: false,
-          });
+          };
+          setUserLocation(newLoc);
+
+          const now = Date.now();
+          const distMoved = getDistanceInMeters(lastSyncLat, lastSyncLng, pos.coords.latitude, pos.coords.longitude);
+          if (now - lastSyncTime > 15000 || distMoved > 25) {
+            lastSyncTime = now;
+            lastSyncLat = pos.coords.latitude;
+            lastSyncLng = pos.coords.longitude;
+            syncUserLocationToFirestore(newLoc, currentUser?.uid);
+          }
         },
         (err) => {
           console.warn('Geolocation watch warning:', err.message);
         },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
       );
 
       return () => {
         navigator.geolocation.clearWatch(watchId);
       };
+    } else {
+      fetchInternetLocation(true);
     }
-  }, [currentUser?.uid]);
+  }, [batterySaverMode, currentUser?.uid, fetchInternetLocation]);
 
   // Live Geofencing Engine: Checks if user entered alarm radius
   useEffect(() => {
     if (triggeredAlarm) return; // already alerting
-    if (!userLocation.lat || !userLocation.lng || userLocation.accuracy === undefined) return; // Wait for high accuracy GPS fix, not IP fallback
+    if (!userLocation.lat || !userLocation.lng) return;
 
     const now = Date.now();
     for (const alarm of alarms) {
@@ -398,18 +455,51 @@ export default function App() {
     setTriggeredAlarm(alarm);
   };
 
+  const handleSetUserLocation = (loc: { lat: number; lng: number; name?: string }) => {
+    const newLoc: UserLocation = {
+      lat: loc.lat,
+      lng: loc.lng,
+      accuracy: 25,
+      city: loc.name || undefined,
+      source: 'manual',
+      method: 'manual',
+      timestamp: Date.now(),
+      isSimulated: false,
+    };
+    setUserLocation(newLoc);
+    showToast(
+      loc.name ? `Location calibrated to ${loc.name}` : 'Location calibrated',
+      'success'
+    );
+    syncUserLocationToFirestore(newLoc, currentUser?.uid);
+  };
+
   const handleRecenterUser = () => {
+    if (batterySaverMode) {
+      fetchInternetLocation(false);
+      return;
+    }
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setUserLocation({
+          const newLoc: UserLocation = {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
+            heading: pos.coords.heading || undefined,
+            speed: pos.coords.speed || undefined,
+            source: 'gps',
             timestamp: Date.now(),
-          });
+            isSimulated: false,
+          };
+          setUserLocation(newLoc);
+          showToast('Centered on GPS location', 'info');
+          syncUserLocationToFirestore(newLoc, currentUser?.uid);
         },
-        () => {}
+        () => {
+          showToast('Could not get GPS fix. Try battery saver mode.', 'info');
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
       );
     }
   };
@@ -423,6 +513,10 @@ export default function App() {
   };
 
   const handleRequestLocation = () => {
+    if (batterySaverMode) {
+      fetchInternetLocation(false);
+      return;
+    }
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -430,6 +524,7 @@ export default function App() {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
+            source: 'gps',
             timestamp: Date.now(),
           });
           setPermissionState('granted');
@@ -463,7 +558,7 @@ export default function App() {
       )}
 
       {/* Permission Banner for WebViews/APK */}
-      {(!userLocation.accuracy && permissionState !== 'granted') && (
+      {(!userLocation.accuracy && permissionState !== 'granted' && !batterySaverMode) && (
         <div className="bg-[#541229] border-b border-[#ffa8bf]/30 p-3 md:p-4 z-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-[#ffa8bf]/20 flex items-center justify-center shrink-0">
@@ -492,6 +587,9 @@ export default function App() {
             onOpenNewAlarm={handleOpenNewAlarm}
             onSelectAlarm={handleSelectAlarm}
             onRecenterUser={handleRecenterUser}
+            batterySaverMode={batterySaverMode}
+            onToggleBatterySaver={handleToggleBatterySaver}
+            onSetUserLocation={handleSetUserLocation}
           />
         )}
 
@@ -510,6 +608,12 @@ export default function App() {
           <SettingsView
             defaultTone={defaultTone}
             onSelectDefaultTone={handleSelectDefaultTone}
+            batterySaverMode={batterySaverMode}
+            onToggleBatterySaver={handleToggleBatterySaver}
+            userLocation={userLocation}
+            onRefreshLocation={() => fetchInternetLocation(false)}
+            isRefreshingLocation={isRefreshingLocation}
+            onSetUserLocation={handleSetUserLocation}
             onTriggerTestAlarm={() => {
               if (alarms.length > 0) {
                 handleTestTrigger({

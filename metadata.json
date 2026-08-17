@@ -1,6 +1,6 @@
 {
   "name": "Wakey Wakey",
-  "description": "Smart location-based GPS destination alarm for commuters and travelers",
+  "description": "Smart location-based GPS & battery-saving internet proximity alarm for commuters and travelers",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

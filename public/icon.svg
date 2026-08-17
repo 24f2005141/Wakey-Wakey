@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a0818"/>
+      <stop offset="100%" stop-color="#12040b"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffa8bf"/>
+      <stop offset="100%" stop-color="#d43f6c"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffa8bf" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ffa8bf" stop-opacity="0.1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded rect -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle inner border -->
+  <rect x="6" y="6" width="500" height="500" rx="106" fill="none" stroke="#ffa8bf" stroke-opacity="0.2" stroke-width="4"/>
+
+  <!-- Radar Pulse Rings -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#ringGrad)" stroke-width="2.5" stroke-dasharray="8 8"/>
+  <circle cx="256" cy="256" r="130" fill="none" stroke="url(#ringGrad)" stroke-width="3" stroke-dasharray="6 6"/>
+  <circle cx="256" cy="256" r="85" fill="none" stroke="#ffa8bf" stroke-opacity="0.25" stroke-width="3.5"/>
+
+  <!-- Alarm Bells at Top Left and Top Right -->
+  <path d="M165 145 L130 110" stroke="#ffa8bf" stroke-width="18" stroke-linecap="round"/>
+  <path d="M347 145 L382 110" stroke="#ffa8bf" stroke-width="18" stroke-linecap="round"/>
+
+  <!-- Main Pin / Wake Badge -->
+  <g transform="translate(256, 245)">
+    <!-- Location Pin Body -->
+    <path d="M 0 -90 C -55 -90 -100 -45 -100 10 C -100 65 0 135 0 135 C 0 135 100 65 100 10 C 100 -45 55 -90 0 -90 Z" fill="url(#glowGrad)"/>
+    
+    <!-- Inner Dark Circle -->
+    <circle cx="0" cy="5" r="42" fill="#1b0611"/>
+    
+    <!-- Clock Hands inside Pin -->
+    <!-- Center Dot -->
+    <circle cx="0" cy="5" r="6" fill="#ffa8bf"/>
+    <!-- Hour Hand -->
+    <line x1="0" y1="5" x2="0" y2="-20" stroke="#ffa8bf" stroke-width="6" stroke-linecap="round"/>
+    <!-- Minute Hand -->
+    <line x1="0" y1="5" x2="18" y2="5" stroke="#ffa8bf" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>
