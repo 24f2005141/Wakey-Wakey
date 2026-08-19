@@ -1,5 +1,76 @@
+import { Capacitor } from '@capacitor/core';
+import { Haptics } from '@capacitor/haptics';
+import AlarmVibration from './nativeVibration';
+
 let audioCtx: AudioContext | null = null;
 let activeAlarmInterval: number | null = null;
+let activeVibrationInterval: number | null = null;
+let vibrationTimeouts: number[] = [];
+
+// Buzz pattern: two short pulses then one long one, matching the old
+// [400, 200, 400, 200, 800] Web Vibration API pattern. Expressed as
+// (delay-from-cycle-start, duration) pairs since Haptics.vibrate() only
+// takes a single duration per call, not a pattern array.
+const VIBRATION_PULSES: { delay: number; duration: number }[] = [
+  { delay: 0, duration: 400 },
+  { delay: 600, duration: 400 },
+  { delay: 1200, duration: 800 },
+];
+const VIBRATION_CYCLE_DURATION = 2300;
+
+function fireVibrationPattern() {
+  for (const { delay, duration } of VIBRATION_PULSES) {
+    const timeoutId = window.setTimeout(() => {
+      Haptics.vibrate({ duration }).catch((err) => {
+        console.error('[Vibration] Haptics.vibrate failed:', err);
+      });
+    }, delay);
+    vibrationTimeouts.push(timeoutId);
+  }
+}
+
+function clearVibrationTimeouts() {
+  for (const id of vibrationTimeouts) {
+    clearTimeout(id);
+  }
+  vibrationTimeouts = [];
+}
+
+/**
+ * Start buzzing. On a real Android/iOS build this calls a small custom
+ * native plugin (AlarmVibrationPlugin) that asks the OS to loop a waveform
+ * pattern forever via VibrationEffect.createWaveform(pattern, repeat=0) —
+ * looping happens in the OS's vibration service itself, not via JS timers,
+ * so it can't be affected by the WebView's JS thread stuttering or the
+ * browser's "requires a user gesture" restriction on navigator.vibrate().
+ * In a plain browser (dev/testing only) it falls back to re-firing
+ * Haptics.vibrate() (which itself wraps navigator.vibrate() on web) on a
+ * JS-side loop.
+ */
+function startVibration() {
+  if (Capacitor.isNativePlatform()) {
+    AlarmVibration.start().catch((err) => {
+      console.error('[Vibration] Native AlarmVibration.start failed:', err);
+    });
+    return;
+  }
+  fireVibrationPattern();
+  activeVibrationInterval = window.setInterval(fireVibrationPattern, VIBRATION_CYCLE_DURATION);
+}
+
+function stopVibration() {
+  if (Capacitor.isNativePlatform()) {
+    AlarmVibration.stop().catch((err) => {
+      console.error('[Vibration] Native AlarmVibration.stop failed:', err);
+    });
+    return;
+  }
+  if (activeVibrationInterval !== null) {
+    clearInterval(activeVibrationInterval);
+    activeVibrationInterval = null;
+  }
+  clearVibrationTimeouts();
+}
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -141,12 +212,8 @@ export function startAlarmSound(sound = true, vibration = true, tone = 'gentle_c
     }, 1800);
   }
 
-  if (vibration && 'vibrate' in navigator) {
-    try {
-      navigator.vibrate([400, 200, 400, 200, 800]);
-    } catch {
-      // ignore
-    }
+  if (vibration) {
+    startVibration();
   }
 }
 
@@ -158,11 +225,5 @@ export function stopAlarmSound() {
     clearInterval(activeAlarmInterval);
     activeAlarmInterval = null;
   }
-  if ('vibrate' in navigator) {
-    try {
-      navigator.vibrate(0);
-    } catch {
-      // ignore
-    }
-  }
+  stopVibration();
 }

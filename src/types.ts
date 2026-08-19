@@ -1,6 +1,5 @@
 export interface Alarm {
   id: string;
-  userId: string;
   name: string;
   lat: number;
   lng: number;

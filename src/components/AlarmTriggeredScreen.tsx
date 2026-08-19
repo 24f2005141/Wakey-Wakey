@@ -95,63 +95,13 @@ export const AlarmTriggeredScreen: React.FC<AlarmTriggeredScreenProps> = ({
           </div>
         </div>
 
-        {/* Center Stylized Geofence Map Graphic */}
-        <div className="my-6 w-full max-w-xs sm:max-w-sm aspect-square bg-[#381622] rounded-3xl overflow-hidden border-[3px] border-[#4a1325] shadow-2xl relative flex items-center justify-center">
-          {/* Vector Map Streets Visual Backdrop */}
-          <svg
-            viewBox="0 0 400 400"
-            className="w-full h-full bg-[#52646b] opacity-80"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M 50,400 Q 150,250 200,200 T 350,50 L 400,0 L 400,400 Z"
-              fill="#3e4f55"
-            />
-            {/* Grid lines */}
-            <g stroke="#ffffff" strokeWidth="2" opacity="0.3">
-              <line x1="0" y1="50" x2="400" y2="50" />
-              <line x1="0" y1="100" x2="400" y2="100" />
-              <line x1="0" y1="150" x2="400" y2="150" />
-              <line x1="0" y1="200" x2="400" y2="200" />
-              <line x1="0" y1="250" x2="400" y2="250" />
-              <line x1="0" y1="300" x2="400" y2="300" />
-              <line x1="0" y1="350" x2="400" y2="350" />
-
-              <line x1="50" y1="0" x2="50" y2="400" />
-              <line x1="100" y1="0" x2="100" y2="400" />
-              <line x1="150" y1="0" x2="150" y2="400" />
-              <line x1="200" y1="0" x2="200" y2="400" />
-              <line x1="250" y1="0" x2="250" y2="400" />
-              <line x1="300" y1="0" x2="300" y2="400" />
-              <line x1="350" y1="0" x2="350" y2="400" />
-            </g>
-            {/* Main thoroughfare diagonals */}
-            <line x1="0" y1="380" x2="380" y2="0" stroke="#fce4ec" strokeWidth="6" opacity="0.5" />
-            <line x1="100" y1="400" x2="400" y2="100" stroke="#ffffff" strokeWidth="4" opacity="0.4" />
-          </svg>
-
-          {/* Pulsing Radar Ring Overlay */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            {/* Outer Pulsing Wave */}
-            <div className="w-64 h-64 rounded-full border-2 border-[#ffa8bf]/50 bg-[#ffa8bf]/20 animate-radar" />
-            {/* Static Boundary Circle */}
-            <div className="absolute w-52 h-52 rounded-full border-2 border-[#ff7096] bg-[#ff7096]/25 backdrop-blur-[0.5px]" />
-            
-            {/* Center Target Pin */}
-            <div className="absolute top-[36%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-              <div className="w-8 h-8 rounded-full bg-[#f88da6] border-2 border-white shadow-lg flex items-center justify-center text-[#6a152f]">
-                <MapPin className="w-4 h-4 fill-current" />
-              </div>
-              <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[5px] border-t-[#f88da6]" />
-            </div>
-
-            {/* User Location Dot with ring */}
-            <div className="absolute top-[58%] left-[54%] -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-              <div className="w-6 h-6 rounded-full bg-[#12060c] border-2 border-[#ffffff] flex items-center justify-center shadow-lg">
-                <div className="w-2.5 h-2.5 rounded-full bg-[#f06292]" />
-              </div>
-            </div>
-          </div>
+        {/* App Icon Showcase */}
+        <div className="my-6 w-full max-w-xs sm:max-w-sm aspect-square bg-[#0b0106] rounded-3xl overflow-hidden border-[3px] border-[#4a1325] shadow-2xl relative flex items-center justify-center">
+          <img
+            src="/icon-512x512.png"
+            alt="Wakey Wakey"
+            className="w-full h-full object-cover"
+          />
         </div>
 
         {/* Action Buttons Section */}

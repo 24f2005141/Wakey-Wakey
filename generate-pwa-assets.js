@@ -4,31 +4,31 @@ import path from 'path';
 
 async function generateAssets() {
   const publicDir = path.resolve('public');
-  const svgPath = path.join(publicDir, 'icon.svg');
-  const svgBuffer = fs.readFileSync(svgPath);
+  const iconPath = path.resolve('assets', 'app_icon.png');
+  const iconBuffer = fs.readFileSync(iconPath);
 
   console.log('Generating 192x192 and 512x512 PNG icons...');
 
   // 1. Generate 192x192 PNG
-  await sharp(svgBuffer)
+  await sharp(iconBuffer)
     .resize(192, 192)
     .png()
     .toFile(path.join(publicDir, 'icon-192x192.png'));
 
   // 2. Generate 512x512 PNG
-  await sharp(svgBuffer)
+  await sharp(iconBuffer)
     .resize(512, 512)
     .png()
     .toFile(path.join(publicDir, 'icon-512x512.png'));
 
   // 3. Generate 192x192 Maskable PNG
-  await sharp(svgBuffer)
+  await sharp(iconBuffer)
     .resize(192, 192)
     .png()
     .toFile(path.join(publicDir, 'icon-192x192-maskable.png'));
 
   // 4. Generate 512x512 Maskable PNG
-  await sharp(svgBuffer)
+  await sharp(iconBuffer)
     .resize(512, 512)
     .png()
     .toFile(path.join(publicDir, 'icon-512x512-maskable.png'));

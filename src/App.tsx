@@ -8,14 +8,7 @@ import { SettingsView } from './components/SettingsView';
 import { NavigationBar } from './components/NavigationBar';
 import { getDistanceInMeters, getDefaultStartingLocation } from './utils/geo';
 import { stopAlarmSound } from './utils/audio';
-import { initAuth, signInWithGoogle, signOutUser } from './lib/firebase';
 import {
-  subscribeToUserAlarms,
-  saveAlarmToFirestore,
-  toggleAlarmInFirestore,
-  deleteAlarmFromFirestore,
-  syncUserLocationToFirestore,
-  logUserLocationToFirestore,
   getLocalAlarms,
   saveLocalAlarms,
   getDefaultAlarmTone,
@@ -26,16 +19,13 @@ import {
   saveBatterySaverMode,
   fetchLocationViaInternet,
 } from './utils/internetLocation';
-import { User } from 'firebase/auth';
 import { CheckCircle2, AlertCircle, MapPin } from 'lucide-react';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [alarms, setAlarms] = useState<Alarm[]>(() => getLocalAlarms());
   const [defaultTone, setDefaultTone] = useState<string>(() => getDefaultAlarmTone());
   const [batterySaverMode, setBatterySaverMode] = useState<boolean>(() => getBatterySaverMode());
   const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
-  const [isLoadingAlarms, setIsLoadingAlarms] = useState(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
   const [permissionState, setPermissionState] = useState<PermissionState | 'unknown'>('unknown');
 
@@ -94,50 +84,6 @@ export default function App() {
   const [newAlarmPreset, setNewAlarmPreset] = useState<{ lat: number; lng: number; name: string } | null>(null);
   const [triggeredAlarm, setTriggeredAlarm] = useState<Alarm | null>(null);
 
-  // Initialize Firebase Auth
-  useEffect(() => {
-    const unsubscribe = initAuth((user) => {
-      setCurrentUser(user);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync real-time location to Firestore when user logs in or location changes
-  useEffect(() => {
-    if (currentUser?.uid && userLocation.lat && userLocation.lng) {
-      syncUserLocationToFirestore(userLocation, currentUser.uid);
-    }
-  }, [currentUser?.uid, userLocation.lat, userLocation.lng]);
-
-  // Real-time Firestore Alarms Subscription for Current User
-  useEffect(() => {
-    if (!currentUser?.uid) {
-      setIsLoadingAlarms(false);
-      return;
-    }
-
-    setIsLoadingAlarms(true);
-    const unsubscribe = subscribeToUserAlarms(
-      currentUser.uid,
-      (fetchedAlarms) => {
-        setAlarms((prev) => {
-          if (fetchedAlarms && fetchedAlarms.length > 0) {
-            saveLocalAlarms(fetchedAlarms);
-            return fetchedAlarms;
-          }
-          return prev;
-        });
-        setIsLoadingAlarms(false);
-      },
-      (error) => {
-        console.warn('Firestore subscription warning:', error.message);
-        setIsLoadingAlarms(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [currentUser?.uid]);
-
   // Fetch location using Internet / IP geolocation endpoints (Battery Saver)
   const fetchInternetLocation = useCallback(async (silent = false) => {
     try {
@@ -163,7 +109,6 @@ export default function App() {
           'success'
         );
       }
-      syncUserLocationToFirestore(newLoc, currentUser?.uid);
     } catch (err) {
       console.warn('Failed to fetch location via internet:', err);
       if (!silent) {
@@ -172,7 +117,7 @@ export default function App() {
     } finally {
       setIsRefreshingLocation(false);
     }
-  }, [currentUser?.uid]);
+  }, []);
 
   // Toggle Battery Saver Mode
   const handleToggleBatterySaver = (enabled: boolean) => {
@@ -197,7 +142,6 @@ export default function App() {
               isSimulated: false,
             };
             setUserLocation(newLoc);
-            syncUserLocationToFirestore(newLoc, currentUser?.uid);
           },
           () => {},
           { enableHighAccuracy: true, timeout: 10000 }
@@ -235,7 +179,6 @@ export default function App() {
             isSimulated: false,
           };
           setUserLocation(newLoc);
-          syncUserLocationToFirestore(newLoc, currentUser?.uid);
         },
         (err) => {
           console.warn('Geolocation access prompt warning:', err.message);
@@ -244,10 +187,6 @@ export default function App() {
         },
         { enableHighAccuracy: true, timeout: 8000 }
       );
-
-      let lastSyncTime = 0;
-      let lastSyncLat = 0;
-      let lastSyncLng = 0;
 
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
@@ -262,15 +201,6 @@ export default function App() {
             isSimulated: false,
           };
           setUserLocation(newLoc);
-
-          const now = Date.now();
-          const distMoved = getDistanceInMeters(lastSyncLat, lastSyncLng, pos.coords.latitude, pos.coords.longitude);
-          if (now - lastSyncTime > 15000 || distMoved > 25) {
-            lastSyncTime = now;
-            lastSyncLat = pos.coords.latitude;
-            lastSyncLng = pos.coords.longitude;
-            syncUserLocationToFirestore(newLoc, currentUser?.uid);
-          }
         },
         (err) => {
           console.warn('Geolocation watch warning:', err.message);
@@ -284,7 +214,7 @@ export default function App() {
     } else {
       fetchInternetLocation(true);
     }
-  }, [batterySaverMode, currentUser?.uid, fetchInternetLocation]);
+  }, [batterySaverMode, fetchInternetLocation]);
 
   // Live Geofencing Engine: Checks if user entered alarm radius
   useEffect(() => {
@@ -311,22 +241,13 @@ export default function App() {
     }
   }, [userLocation, alarms, triggeredAlarm]);
 
-  // Alarm Management Handlers (Persisted to Firestore & Local Cache)
-  const handleToggleAlarm = async (id: string) => {
-    const alarm = alarms.find((a) => a.id === id);
-    if (!alarm) return;
-    const newStatus = !alarm.enabled;
-    // Optimistic UI & local cache update
+  // Alarm Management Handlers (Persisted to Local Storage)
+  const handleToggleAlarm = (id: string) => {
     setAlarms((prev) => {
-      const updated = prev.map((a) => (a.id === id ? { ...a, enabled: newStatus } : a));
+      const updated = prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
       saveLocalAlarms(updated);
       return updated;
     });
-    try {
-      await toggleAlarmInFirestore(id, newStatus);
-    } catch (err) {
-      console.warn('Failed to toggle alarm in Firestore:', err);
-    }
   };
 
   const handleOpenNewAlarm = (preset?: { lat: number; lng: number; name: string }) => {
@@ -341,13 +262,12 @@ export default function App() {
     setIsConfiguring(true);
   };
 
-  const handleSaveAlarm = async (
-    alarmData: Omit<Alarm, 'id' | 'createdAt' | 'userId'> & { id?: string; createdAt?: number }
+  const handleSaveAlarm = (
+    alarmData: Omit<Alarm, 'id' | 'createdAt'> & { id?: string; createdAt?: number }
   ) => {
     const finalId = alarmData.id || `alarm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newOrUpdatedAlarm: Alarm = {
       id: finalId,
-      userId: currentUser?.uid || 'guest_user',
       name: alarmData.name,
       lat: alarmData.lat,
       lng: alarmData.lng,
@@ -381,16 +301,9 @@ export default function App() {
     setIsConfiguring(false);
     setEditingAlarm(null);
     setNewAlarmPreset(null);
-
-    // Sync to Firestore in background
-    try {
-      await saveAlarmToFirestore(newOrUpdatedAlarm);
-    } catch (err) {
-      console.warn('Background sync to Firestore:', err);
-    }
   };
 
-  const handleDeleteAlarm = async (id: string) => {
+  const handleDeleteAlarm = (id: string) => {
     const deletedItem = alarms.find((a) => a.id === id);
     setAlarms((prev) => {
       const updated = prev.filter((a) => a.id !== id);
@@ -400,11 +313,6 @@ export default function App() {
     showToast(`Deleted "${deletedItem?.name || 'Alarm'}"`, 'info');
     setIsConfiguring(false);
     setEditingAlarm(null);
-    try {
-      await deleteAlarmFromFirestore(id);
-    } catch (err) {
-      console.warn('Failed to delete alarm from Firestore:', err);
-    }
   };
 
   const handleDismissTriggeredAlarm = () => {
@@ -423,13 +331,6 @@ export default function App() {
       });
 
       showToast(`Destination reached! Alarm dismissed for "${currentTriggered.name}".`, 'success');
-
-      // Persist disabled state in Firestore
-      if (updatedAlarmId && !updatedAlarmId.startsWith('test-')) {
-        toggleAlarmInFirestore(updatedAlarmId, false).catch((err) =>
-          console.warn('Failed to update dismissed alarm in Firestore:', err)
-        );
-      }
     }
     setTriggeredAlarm(null);
   };
@@ -451,10 +352,6 @@ export default function App() {
     setTriggeredAlarm(null);
   };
 
-  const handleTestTrigger = (alarm: Alarm) => {
-    setTriggeredAlarm(alarm);
-  };
-
   const handleSetUserLocation = (loc: { lat: number; lng: number; name?: string }) => {
     const newLoc: UserLocation = {
       lat: loc.lat,
@@ -471,7 +368,6 @@ export default function App() {
       loc.name ? `Location calibrated to ${loc.name}` : 'Location calibrated',
       'success'
     );
-    syncUserLocationToFirestore(newLoc, currentUser?.uid);
   };
 
   const handleRecenterUser = () => {
@@ -494,7 +390,6 @@ export default function App() {
           };
           setUserLocation(newLoc);
           showToast('Centered on GPS location', 'info');
-          syncUserLocationToFirestore(newLoc, currentUser?.uid);
         },
         () => {
           showToast('Could not get GPS fix. Try battery saver mode.', 'info');
@@ -502,14 +397,6 @@ export default function App() {
         { enableHighAccuracy: true, timeout: 8000 }
       );
     }
-  };
-
-  const handleGoogleSignIn = async () => {
-    await signInWithGoogle();
-  };
-
-  const handleSignOut = async () => {
-    await signOutUser();
   };
 
   const handleRequestLocation = () => {
@@ -600,7 +487,6 @@ export default function App() {
             onSelectAlarm={handleSelectAlarm}
             onOpenNewAlarm={() => handleOpenNewAlarm()}
             onDeleteAlarm={handleDeleteAlarm}
-            onTestTriggerAlarm={handleTestTrigger}
           />
         )}
 
@@ -614,28 +500,6 @@ export default function App() {
             onRefreshLocation={() => fetchInternetLocation(false)}
             isRefreshingLocation={isRefreshingLocation}
             onSetUserLocation={handleSetUserLocation}
-            onTriggerTestAlarm={() => {
-              if (alarms.length > 0) {
-                handleTestTrigger({
-                  ...alarms[0],
-                  alarmTone: (defaultTone as any) || alarms[0].alarmTone || 'gentle_chime',
-                });
-              } else {
-                handleTestTrigger({
-                  id: 'test-preview-alarm',
-                  userId: currentUser?.uid || '',
-                  name: 'Grand Central Terminal',
-                  lat: userLocation.lat + 0.005,
-                  lng: userLocation.lng + 0.005,
-                  radius: 500,
-                  enabled: true,
-                  sound: true,
-                  vibration: true,
-                  alarmTone: (defaultTone as any) || 'gentle_chime',
-                  createdAt: Date.now(),
-                });
-              }
-            }}
           />
         )}
       </div>

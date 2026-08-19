@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Search, Plus, Compass, BellOff, Bell, Trash2, Edit3, Play, Volume2 } from 'lucide-react';
+import { MapPin, Search, Plus, Compass, BellOff, Bell, Trash2, Edit3, Volume2 } from 'lucide-react';
 import { Alarm } from '../types';
 import { formatDistance } from '../utils/geo';
 
@@ -9,7 +9,6 @@ interface AlarmsViewProps {
   onSelectAlarm: (alarm: Alarm) => void;
   onOpenNewAlarm: () => void;
   onDeleteAlarm: (id: string) => void;
-  onTestTriggerAlarm: (alarm: Alarm) => void;
 }
 
 export const AlarmsView: React.FC<AlarmsViewProps> = ({
@@ -18,7 +17,6 @@ export const AlarmsView: React.FC<AlarmsViewProps> = ({
   onSelectAlarm,
   onOpenNewAlarm,
   onDeleteAlarm,
-  onTestTriggerAlarm,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -219,15 +217,6 @@ export const AlarmsView: React.FC<AlarmsViewProps> = ({
 
                   {/* Right Quick Controls */}
                   <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {/* Test Alarm Trigger Button */}
-                    <button
-                      onClick={() => onTestTriggerAlarm(alarm)}
-                      title="Test trigger alarm screen"
-                      className="p-2 rounded-full text-[#a88294] hover:text-[#ffa8bf] hover:bg-[#341123] transition-colors"
-                    >
-                      <Play className="w-4 h-4" />
-                    </button>
-
                     {/* Toggle Switch */}
                     <button
                       onClick={() => onToggleAlarm(alarm.id)}

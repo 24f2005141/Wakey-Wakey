@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Zap, CheckCircle2, Check, Volume2, BatteryCharging, Radio, RefreshCw, Wifi, Navigation, MapPin, Search, Crosshair } from 'lucide-react';
+import { Play, CheckCircle2, Check, Volume2, BatteryCharging, Radio, RefreshCw, Wifi, Navigation, MapPin, Search, Crosshair } from 'lucide-react';
 import { playAlarmSequence } from '../utils/audio';
 import { UserLocation, LocationSearchResult } from '../types';
 import { searchLocations } from '../utils/geo';
 
 interface SettingsViewProps {
-  onTriggerTestAlarm: () => void;
   defaultTone: string;
   onSelectDefaultTone: (toneId: string) => void;
   batterySaverMode: boolean;
@@ -17,7 +16,6 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
-  onTriggerTestAlarm,
   defaultTone,
   onSelectDefaultTone,
   batterySaverMode,
@@ -419,29 +417,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
-          {/* Instant Preview Fullscreen Alarm */}
-          <section className="space-y-2">
-            <label className="block font-spacemono text-[11px] uppercase tracking-wider text-[#d69db3]">
-              PREVIEW FULLSCREEN ALARM
-            </label>
-            <button
-              onClick={onTriggerTestAlarm}
-              className="w-full bg-[#701533] hover:bg-[#881d40] text-[#fce4ec] font-fraunces text-base py-3 px-6 rounded-2xl flex items-center justify-center gap-2 border border-[#ffa8bf]/30 shadow-lg transition-all cursor-pointer"
-            >
-              <Zap className="w-5 h-5 text-[#ffa8bf]" />
-              <span>Test Fullscreen Alarm</span>
-            </button>
-          </section>
-
-          {/* About App */}
-          <section className="bg-[#160810] border border-[#2e0e1e] rounded-2xl p-4 flex flex-col justify-center text-center space-y-1">
-            <h3 className="font-fraunces text-base sm:text-lg text-[#ffa8bf]">Wakey Wakey</h3>
-            <p className="font-spacemono text-[11px] sm:text-xs text-[#8f6d7d]">
-              Destination Arrival Alarms with GPS & Low-Power Internet Tracking.
-            </p>
-          </section>
-        </div>
+        {/* About App */}
+        <section className="bg-[#160810] border border-[#2e0e1e] rounded-2xl p-4 flex flex-col justify-center text-center space-y-1">
+          <h3 className="font-fraunces text-base sm:text-lg text-[#ffa8bf]">Wakey Wakey</h3>
+          <p className="font-spacemono text-[11px] sm:text-xs text-[#8f6d7d]">
+            Destination Arrival Alarms with GPS & Low-Power Internet Tracking.
+          </p>
+        </section>
       </div>
     </div>
   );
