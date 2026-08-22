@@ -12,6 +12,7 @@ Built as a React + TypeScript web app, packaged for Android via [Capacitor](http
 - **Multiple simultaneous alarms**, each with its own destination, radius, category (transit / work / home / airport / other), and tone.
 - **Four synthesized alarm tones** (Gentle Wake, Station Bell, Subway Chime, Urgency Pulse) generated live with the Web Audio API — no audio files to ship or load.
 - **Native vibration** on Android via a small custom Capacitor plugin that loops a buzz pattern at the OS level (see [Native Android vibration](#native-android-vibration) below).
+- **Background alarm monitoring** on Android — alarms keep firing even when the app is closed or the phone is locked, via a native Google Play Services geofence rather than in-app polling (see [Background alarm monitoring](#background-alarm-monitoring) below).
 - **Snooze / dismiss** controls on the full-screen alarm alert.
 - **Offline-capable** — GPS tracking, geofence triggering, alarm sound/vibration, and alarm storage all work with zero connectivity once the app has been opened online at least once (only live map tiles and address search need a connection).
 - **PWA-installable** — also works as an installable Progressive Web App on desktop/mobile browsers, independent of the Android build.
@@ -50,12 +51,19 @@ src/
     internetLocation.ts        # Low-power Wi-Fi/IP-based location fetch (Battery Saver)
     audio.ts                   # Synthesized alarm tones + vibration orchestration
     nativeVibration.ts         # Typed wrapper around the custom native vibration plugin
+    nativeAlarmMonitor.ts      # Typed wrapper around the background geofence monitor plugin
   types.ts                     # Alarm / UserLocation / shared types
 
 android/                      # Capacitor-generated native Android project
   app/src/main/java/com/wakeywakey/app/
-    MainActivity.java          # Registers AlarmVibrationPlugin
-    AlarmVibrationPlugin.java  # Native Android vibration (see below)
+    MainActivity.java            # Registers the custom plugins below
+    AlarmVibrationPlugin.java    # Foreground vibration control, called from audio.ts
+    AlarmMonitorPlugin.java      # JS <-> native bridge for background monitoring (see below)
+    GeofenceBroadcastReceiver.java  # Fires on geofence ENTER, even if the app was killed
+    BootCompletedReceiver.java     # Re-registers geofences after a device reboot
+    GeofenceRegistrar.java         # Shared geofence add/remove logic
+    NativeAlarmStore.java          # Native-side alarm list + "pending trigger" storage
+    VibrationHelper.java           # Shared vibration start/stop, used by both plugins/receiver
 
 public/                       # Static assets, PWA manifest, service worker
 assets/app_icon.png           # Master app icon source (regenerated into public/icon-*.png on build)
@@ -127,7 +135,12 @@ Release builds are signed using `android/keystore.properties` (gitignored) point
 |---|---|
 | `INTERNET` | Map tiles, address search, Battery Saver's IP/Wi-Fi location lookups |
 | `ACCESS_COARSE_LOCATION` / `ACCESS_FINE_LOCATION` | GPS-based alarm triggering |
+| `ACCESS_BACKGROUND_LOCATION` | Lets registered geofences keep firing while the app is closed |
 | `VIBRATE` | Alarm vibration |
+| `WAKE_LOCK` | Briefly keeps the CPU awake to reliably post the alarm notification + start vibration when a geofence fires from Doze |
+| `POST_NOTIFICATIONS` | Required on Android 13+ to show the alarm notification |
+| `USE_FULL_SCREEN_INTENT` | Lets the alarm notification take over the screen like a real alarm clock, instead of a quiet banner |
+| `RECEIVE_BOOT_COMPLETED` | Re-registers geofences after a reboot (they don't survive one) |
 
 `android:allowBackup` is set to `false` so alarm destinations (potentially home/work addresses) can't be extracted via `adb backup` or Android's cloud auto-backup.
 
@@ -141,13 +154,32 @@ Chromium (and therefore the Android WebView) requires a direct, recent user tap 
 
 ## How alarm triggering works
 
+**In the foreground:**
+
 1. `App.tsx` watches the device's location via `navigator.geolocation.watchPosition` (high-accuracy GPS) or, in Battery Saver Mode, periodically polls IP/Wi-Fi-based location.
 2. On every location update, a geofencing effect computes the Haversine distance from the current position to each *enabled* alarm's destination.
 3. If the distance drops within an alarm's configured radius, that alarm becomes the active `triggeredAlarm`, mounting `AlarmTriggeredScreen` — which starts the looping synthesized tone and native vibration, and disables the alarm once dismissed (or snoozes it for 5 minutes).
 4. Alarms are persisted to `localStorage` on every create/update/delete/toggle — no network round-trip.
 
+**In the background** (app closed / phone locked), see the next section — the JS geofencing loop above only runs while the WebView is alive, so a separate native path handles the rest.
+
+## Background alarm monitoring
+
+The JS-side geofencing loop only runs while the app's WebView is alive — closing the app, or Android killing it in the background, stops it. Reliable background alarms need the OS itself watching your location, which is what this does:
+
+1. **Sync**: whenever `alarms` changes, `App.tsx` calls `AlarmMonitor.syncAlarms()` (native platforms only), sending the current alarm list to `AlarmMonitorPlugin.java`, which saves it to `SharedPreferences` (`NativeAlarmStore`) and registers a Google Play Services **geofence** (`GeofencingClient`) for every *enabled* alarm via `GeofenceRegistrar`.
+2. **Fire**: Play Services monitors these geofences at the OS level — independent of whether the app process is even alive. On entering one, it invokes `GeofenceBroadcastReceiver` directly. That receiver:
+   - starts native vibration immediately (`VibrationHelper`, the same looping `VibrationEffect` used in the foreground case),
+   - posts a high-priority notification with a full-screen intent (so it can take over the screen like a real alarm clock),
+   - and records which alarm fired as a "pending trigger" (`NativeAlarmStore`) — all synchronously, without needing the WebView running at all.
+3. **Reconnect**: once the app is opened (cold start, or brought back to the foreground — checked on mount and on every `visibilitychange`), `App.tsx` calls `AlarmMonitor.checkPendingTrigger()`. If a trigger is waiting, it looks up the matching alarm and sets it as `triggeredAlarm`, mounting the same rich `AlarmTriggeredScreen` (synthesized tone, snooze/dismiss UI) the foreground path uses.
+4. **Survive reboots**: geofences don't persist across a device restart, so `BootCompletedReceiver` re-registers all enabled alarms from `NativeAlarmStore` on `BOOT_COMPLETED`.
+
+**"Allow all the time" location permission**: Android will not fire geofences in the background without `ACCESS_BACKGROUND_LOCATION`, and on Android 11+ the system usually won't even offer that option from a normal in-app permission dialog — it has to be granted from the app's system settings page. The Settings screen has an **Background Alarms** section (`SettingsView.tsx`) that requests it via `AlarmMonitor.requestBackgroundLocationPermission()` and, if the dialog doesn't grant it (the common case on 11+), automatically opens the app's settings page (`AlarmMonitor.openLocationSettings()`) so the user can flip "Allow all the time" manually.
+
 ## Known limitations
 
-- **Foreground-only tracking**: geofence checks run in the app's JavaScript, so they only evaluate while the app is open (foreground or briefly backgrounded). There's no native background service/geofencing API integration (yet), so Android may pause location updates if the app is killed or aggressively backgrounded by battery optimization — this is a common constraint for WebView-based apps and would require a native background service to fully solve.
+- **Background reliability varies by device**: the Play Services Geofencing API is the OS-sanctioned way to do this and is far more reliable than in-app polling, but heavily customized Android skins (MIUI, ColorOS, FuntouchOS, etc.) are known to kill background processes and suppress wake events more aggressively than stock Android — you may need to manually allow the app under battery/autostart settings for consistent triggering.
+- **Full-screen takeover isn't guaranteed**: Android 14+ added a separate, user-controlled toggle for whether a notification's full-screen intent is allowed to actually take over the screen; without it, the alarm still fires (vibration + a normal heads-up notification you can tap), just without the automatic full-screen wake.
 - **Live map tiles need connectivity**: OpenStreetMap tile images and address search (Nominatim) require internet; GPS tracking, geofence triggering, alarm sound/vibration, and alarm storage do not.
-- **OEM battery/app restrictions**: some heavily customized Android skins (MIUI, ColorOS, FuntouchOS, etc.) restrict background behavior per-app by default — you may need to manually allow the app under battery/autostart settings for reliable triggering.
+- **This background path is Android-only** — there's no iOS platform in this project (Capacitor is only configured for Android), and the underlying mechanism (Play Services Geofencing) doesn't apply there anyway.

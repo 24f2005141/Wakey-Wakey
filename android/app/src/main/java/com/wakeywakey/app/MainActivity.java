@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AlarmVibrationPlugin.class);
+        registerPlugin(AlarmMonitorPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Play, CheckCircle2, Check, Volume2, BatteryCharging, Radio, RefreshCw, Wifi, Navigation, MapPin, Search, Crosshair } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Play, CheckCircle2, Check, Volume2, BatteryCharging, Radio, RefreshCw, Wifi, Navigation, MapPin, Search, Crosshair, ShieldCheck, ShieldAlert, ExternalLink } from 'lucide-react';
 import { playAlarmSequence } from '../utils/audio';
 import { UserLocation, LocationSearchResult } from '../types';
 import { searchLocations } from '../utils/geo';
+import AlarmMonitor from '../utils/nativeAlarmMonitor';
 
 interface SettingsViewProps {
   defaultTone: string;
@@ -30,6 +32,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [calibrateResults, setCalibrateResults] = useState<LocationSearchResult[]>([]);
   const [isSearchingCalibrate, setIsSearchingCalibrate] = useState(false);
   const [showCalibrateInput, setShowCalibrateInput] = useState(false);
+  const isNative = Capacitor.isNativePlatform();
+  const [backgroundLocationGranted, setBackgroundLocationGranted] = useState<boolean | null>(null);
+  const [isRequestingBackgroundLocation, setIsRequestingBackgroundLocation] = useState(false);
+
+  // Check current "Allow all the time" location permission state on mount (native only)
+  useEffect(() => {
+    if (!isNative) return;
+    AlarmMonitor.hasBackgroundLocationPermission()
+      .then(({ granted }) => setBackgroundLocationGranted(granted))
+      .catch(() => setBackgroundLocationGranted(null));
+  }, [isNative]);
+
+  const handleEnableBackgroundAlarms = async () => {
+    setIsRequestingBackgroundLocation(true);
+    try {
+      const { granted } = await AlarmMonitor.requestBackgroundLocationPermission();
+      setBackgroundLocationGranted(granted);
+      if (!granted) {
+        // Android 11+ usually won't offer "Allow all the time" from the
+        // in-app dialog at all — the only way to grant it is through the
+        // system settings page for this app.
+        await AlarmMonitor.openLocationSettings();
+      }
+    } catch (err) {
+      console.error('Failed to request background location permission:', err);
+    } finally {
+      setIsRequestingBackgroundLocation(false);
+    }
+  };
 
   // Search for calibration places
   useEffect(() => {
@@ -334,6 +365,54 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           </div>
         </section>
+
+        {/* Background Alarms Permission Section (native Android only) */}
+        {isNative && (
+          <section className="space-y-3">
+            <label className="block font-spacemono text-[11px] uppercase tracking-wider text-[#d69db3]">
+              BACKGROUND ALARMS
+            </label>
+            <div className="bg-[#1a0a13] border border-[#3e1327] rounded-2xl p-4 sm:p-5 shadow-sm space-y-3">
+              <div className="flex items-start gap-3.5">
+                <div
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                    backgroundLocationGranted
+                      ? 'bg-[#14331e] border-[#2e7d32] text-[#69f0ae]'
+                      : 'bg-[#2b0e1d] border-[#4a1832] text-[#d69db3]'
+                  }`}
+                >
+                  {backgroundLocationGranted ? (
+                    <ShieldCheck className="w-6 h-6" />
+                  ) : (
+                    <ShieldAlert className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-fraunces text-base sm:text-lg text-white font-medium">
+                    {backgroundLocationGranted ? 'Background Alarms Enabled' : 'Enable Background Alarms'}
+                  </div>
+                  <div className="font-spacemono text-xs text-[#a88294] mt-0.5 leading-relaxed">
+                    {backgroundLocationGranted
+                      ? 'Alarms can wake you up even while the app is closed or your phone is locked.'
+                      : 'Without "Allow all the time" location access, alarms only fire while this app is open. Enable it so you can safely close the app and still get woken up.'}
+                  </div>
+                </div>
+              </div>
+
+              {!backgroundLocationGranted && (
+                <button
+                  type="button"
+                  onClick={handleEnableBackgroundAlarms}
+                  disabled={isRequestingBackgroundLocation}
+                  className="w-full bg-[#701533] hover:bg-[#881d40] text-[#fce4ec] font-fraunces text-sm py-3 px-5 rounded-xl flex items-center justify-center gap-2 border border-[#ffa8bf]/30 transition-all cursor-pointer disabled:opacity-60"
+                >
+                  <ExternalLink className="w-4 h-4 text-[#ffa8bf]" />
+                  <span>{isRequestingBackgroundLocation ? 'Requesting...' : 'Enable Background Alarms'}</span>
+                </button>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Alarm Sounds Section with Persistent Default Selection */}
         <section className="space-y-2.5">

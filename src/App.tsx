@@ -6,6 +6,7 @@ import { ConfigureAlarmModal } from './components/ConfigureAlarmModal';
 import { AlarmTriggeredScreen } from './components/AlarmTriggeredScreen';
 import { SettingsView } from './components/SettingsView';
 import { NavigationBar } from './components/NavigationBar';
+import { Capacitor } from '@capacitor/core';
 import { getDistanceInMeters, getDefaultStartingLocation } from './utils/geo';
 import { stopAlarmSound } from './utils/audio';
 import {
@@ -19,6 +20,7 @@ import {
   saveBatterySaverMode,
   fetchLocationViaInternet,
 } from './utils/internetLocation';
+import AlarmMonitor from './utils/nativeAlarmMonitor';
 import { CheckCircle2, AlertCircle, MapPin } from 'lucide-react';
 
 export default function App() {
@@ -83,6 +85,68 @@ export default function App() {
   const [editingAlarm, setEditingAlarm] = useState<Alarm | null>(null);
   const [newAlarmPreset, setNewAlarmPreset] = useState<{ lat: number; lng: number; name: string } | null>(null);
   const [triggeredAlarm, setTriggeredAlarm] = useState<Alarm | null>(null);
+
+  // Kept in sync with `alarms` so the pending-trigger check below (which only
+  // runs once on mount, plus on visibility changes) can always read the
+  // latest alarm list without re-subscribing its listener on every change.
+  const alarmsRef = useRef(alarms);
+  useEffect(() => {
+    alarmsRef.current = alarms;
+  }, [alarms]);
+
+  // Native background monitoring: mirror the current alarm set to the native
+  // geofencing layer (see android/.../AlarmMonitorPlugin.java) so alarms can
+  // still fire — via a background-registered Play Services geofence — even
+  // when the app isn't open. No-ops in the browser/dev.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    AlarmMonitor.syncAlarms({
+      alarms: alarms.map((a) => ({
+        id: a.id,
+        name: a.name,
+        lat: a.lat,
+        lng: a.lng,
+        radius: a.radius,
+        enabled: a.enabled,
+        sound: a.sound,
+        vibration: a.vibration,
+      })),
+    }).catch((err) => {
+      console.error('[AlarmMonitor] Failed to sync alarms natively:', err);
+    });
+  }, [alarms]);
+
+  // Pick up an alarm that fired natively while the app wasn't in the
+  // foreground (native side already started vibration + posted a
+  // notification — this just brings up the full alarm screen with sound
+  // once the app is actually open). Checked on cold start and every time
+  // the app becomes visible again.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const checkPendingTrigger = async () => {
+      try {
+        const { alarmId } = await AlarmMonitor.checkPendingTrigger();
+        if (!alarmId) return;
+        const match = alarmsRef.current.find((a) => a.id === alarmId);
+        if (match) {
+          setTriggeredAlarm(match);
+        }
+      } catch (err) {
+        console.error('[AlarmMonitor] Failed to check pending trigger:', err);
+      }
+    };
+
+    checkPendingTrigger();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkPendingTrigger();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   // Fetch location using Internet / IP geolocation endpoints (Battery Saver)
   const fetchInternetLocation = useCallback(async (silent = false) => {
