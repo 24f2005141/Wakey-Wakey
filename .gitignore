@@ -10,3 +10,16 @@ keystore/
 *.keystore
 *.jks
 .idea/
+
+# Added for security & repository hygiene
+*.pem
+.env.*
+.venv/
+venv/
+__pycache__/
+.next/
+.gcloud-temp/
+*.rdb
+celerybeat-schedule
+memecam_env/
+gcp-cloud-q1-details.json
